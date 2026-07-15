@@ -1,0 +1,260 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  OWNER
+  ANALYST
+  VIEWER
+}
+
+enum Severity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+// ─── User ─────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(ANALYST)
+  createdAt    DateTime @default(now())
+
+  ownedProjects   Project[]       @relation("ProjectOwner")
+  memberships     ProjectMember[]
+  notes           Note[]
+  attachments     Attachment[]
+  timelineEntries TimelineEntry[]
+  generatedReports Report[]
+}
+
+// ─── Project ──────────────────────────────────────────────────────────────────
+
+model Project {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ownerId String
+  owner   User   @relation("ProjectOwner", fields: [ownerId], references: [id])
+
+  members         ProjectMember[]
+  assets          Asset[]
+  findings        Finding[]
+  notes           Note[]
+  timelineEntries TimelineEntry[]
+  attachments     Attachment[]
+  invites         Invite[]
+  reports         Report[]
+  scans           Scan[]
+  captureSession  CaptureSession?
+  playbooks       Playbook[]
+}
+
+// ─── ProjectMember ────────────────────────────────────────────────────────────
+
+model ProjectMember {
+  id        String   @id @default(uuid())
+  joinedAt  DateTime @default(now())
+  role      Role     @default(ANALYST)
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+// ─── Asset ────────────────────────────────────────────────────────────────────
+
+model Asset {
+  id        String   @id @default(uuid())
+  type      String
+  ip        String?
+  hostname  String?
+  tags      Json     @default("[]")
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  findings    Finding[]
+  attachments Attachment[]
+}
+
+// ─── Finding ──────────────────────────────────────────────────────────────────
+
+model Finding {
+  id          String   @id @default(uuid())
+  type        String
+  severity    Severity
+  description String
+  createdAt   DateTime @default(now())
+
+  assetId String
+  asset   Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// ─── Note ─────────────────────────────────────────────────────────────────────
+
+model Note {
+  id        String   @id @default(uuid())
+  content   String   @db.LongText
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id])
+}
+
+// ─── TimelineEntry ────────────────────────────────────────────────────────────
+
+model TimelineEntry {
+  id        String   @id @default(uuid())
+  action    String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+}
+
+// ─── Attachment ───────────────────────────────────────────────────────────────
+
+model Attachment {
+  id        String   @id @default(uuid())
+  filename  String
+  fileUrl   String
+  fileSize  Int
+  mimeType  String
+  createdAt DateTime @default(now())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  assetId String?
+  asset   Asset?  @relation(fields: [assetId], references: [id])
+
+  uploadedById String
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
+}
+
+// ─── Invite ───────────────────────────────────────────────────────────────────
+
+model Invite {
+  id        String    @id @default(uuid())
+  email     String
+  role      Role      @default(ANALYST)
+  token     String    @unique @default(uuid())
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// ─── Report ───────────────────────────────────────────────────────────────────
+
+model Report {
+  id        String   @id @default(uuid())
+  title     String
+  sections  Json     // array of section keys included
+  aiContent Json     // parsed AI JSON response
+  riskLevel String
+  createdAt DateTime @default(now())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  generatedById String
+  generatedBy   User   @relation(fields: [generatedById], references: [id])
+}
+
+
+
+model Scan {
+  id        String   @id @default(uuid())
+  target    String
+  results   Json
+  createdAt DateTime @default(now())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// ─── Playbook ─────────────────────────────────────────────────────────────────
+
+model Playbook {
+  id           String   @id @default(uuid())
+  name         String
+  description  String?
+  category     String
+  priority     String
+  status       String   @default("active")
+  steps        Json     @default("[]")
+  stepCount    Int      @default(0)
+  author       String?
+  authorId     String
+  tags         Json     @default("[]")
+  triggerCount Int      @default(0)
+  lastExecuted DateTime?
+  version      String   @default("1.0.0")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model CaptureSession {
+  id                String    @id @default(uuid())
+  projectId         String    @unique
+  project           Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  alerts            Json
+  iocs              Json
+  timeline          Json
+  mitre             Json
+  riskRanking       Json
+  attackStory       Json?
+  investigationPlan Json?
+  trafficIntelligence Json?
+  findings          Json?
+  executiveReport   String    @db.LongText
+  // ── Capture lifecycle ────────────────────────────────────────────────────
+  captureStatus     String    @default("idle")
+  captureComplete   Boolean   @default(false)
+  captureStartedAt  DateTime?
+  captureStoppedAt  DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
