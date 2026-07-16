@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { sendInviteEmail } from "@/lib/email";
 import { Role } from "@prisma/client";
 import { track } from "@/lib/analytics";
+import { TimelineService } from "@/lib/timeline";
 
 const VALID_ROLES: Role[] = ["ANALYST", "VIEWER"];
 
@@ -91,14 +92,7 @@ export async function POST(
       });
 
       // Timeline
-      await prisma.timelineEntry.create({
-        data: {
-          projectId: params.id,
-          userId: session.user.id,
-          action: `${existingUser.name} joined as ${role}`,
-          metadata: { model: "Member", operation: "create" },
-        },
-      });
+      await TimelineService.member(params.id, session.user.id, existingUser.name, role);
 
       await track("member_invited", { userId: session.user.id, projectId: params.id });
 

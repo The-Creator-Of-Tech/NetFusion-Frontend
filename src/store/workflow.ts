@@ -757,8 +757,26 @@ export class WorkflowStore extends Store<WorkflowState> {
     try {
       const url = Endpoints.workflow.executions.list(projectId, playbookId);
       console.log('[WorkflowStore] loadExecutions — GET', url);
-      const res = await request.get<{ executions: Types.WorkflowExecution[]; total: number }>(url);
-      const fetched: Types.WorkflowExecution[] = res.executions ?? [];
+      const res = await request.get<any>(url);
+      const raw = res.data ?? res.executions ?? [];
+      const fetched: Types.WorkflowExecution[] = (Array.isArray(raw) ? raw : []).map((e: any) => ({
+        ...e,
+        id: e.id ?? e.executionId,
+        refId: e.refId ?? e.playbookId,
+        name: e.name ?? e.playbookName ?? 'Playbook Execution',
+        type: e.type ?? 'playbook',
+        completedAt: e.completedAt ?? e.finishedAt,
+        status: (e.status ?? 'queued').toLowerCase() as any,
+        // Phase 2: pass through runtime context fields
+        variables: e.variables ?? {},
+        artifacts: e.artifacts ?? [],
+        artifactsCount: e.artifactsCount ?? (e.artifacts ? e.artifacts.length : 0),
+        stepOutputs: e.stepOutputs ?? {},
+        timelineEvents: e.timelineEvents ?? [],
+        currentExecutor: e.currentExecutor,
+        currentAction: e.currentAction,
+        returnedSummary: e.returnedSummary,
+      }));
       console.log('[WorkflowStore] loadExecutions — API returned', fetched.length, 'executions');
 
       this.setState((s) => {
@@ -772,7 +790,8 @@ export class WorkflowStore extends Store<WorkflowState> {
         console.log('[WorkflowStore] loadExecutions — merged result:', merged.length, 'executions', merged.map(e => e.id));
         return { executions: merged };
       });
-      this.setTotal('executions', res.total ?? fetched.length);
+      const totalCount = res.total ?? (res.metadata?.pagination?.totalItems) ?? fetched.length;
+      this.setTotal('executions', totalCount);
     } catch (err: unknown) {
       console.error('[WorkflowStore] loadExecutions error:', err);
       this.setError('executions', err instanceof Error ? err.message : 'Failed to load executions');
@@ -785,10 +804,29 @@ export class WorkflowStore extends Store<WorkflowState> {
     this.setLoading('executions', true);
     this.setError('executions', null);
     try {
-      const e = await request.get<Types.WorkflowExecution>(
+      const e = await request.get<any>(
         Endpoints.workflow.executions.get(projectId, executionId)
       );
-      this.setState({ selectedExecution: e });
+      const raw = e.data ?? e;
+      const normalized: Types.WorkflowExecution = {
+        ...raw,
+        id: raw.id ?? raw.executionId,
+        refId: raw.refId ?? raw.playbookId,
+        name: raw.name ?? raw.playbookName ?? 'Playbook Execution',
+        type: raw.type ?? 'playbook',
+        completedAt: raw.completedAt ?? raw.finishedAt,
+        status: (raw.status ?? 'queued').toLowerCase() as any,
+        // Phase 2: pass through runtime context fields
+        variables: raw.variables ?? {},
+        artifacts: raw.artifacts ?? [],
+        artifactsCount: raw.artifactsCount ?? (raw.artifacts ? raw.artifacts.length : 0),
+        stepOutputs: raw.stepOutputs ?? {},
+        timelineEvents: raw.timelineEvents ?? [],
+        currentExecutor: raw.currentExecutor,
+        currentAction: raw.currentAction,
+        returnedSummary: raw.returnedSummary,
+      };
+      this.setState({ selectedExecution: normalized });
     } catch (err: unknown) {
       this.setError('executions', err instanceof Error ? err.message : 'Failed to load execution');
     } finally {

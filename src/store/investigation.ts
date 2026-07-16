@@ -115,7 +115,8 @@ export class InvestigationStore extends Store<InvestigationState> {
 
   addTimelineEntry(entry: Types.TimelineEntry): void {
     this.setState((state) => ({
-      timeline: [...state.timeline, entry],
+      // Prepend so the new entry appears at the top (matching DESC sort order)
+      timeline: [entry, ...state.timeline],
     }));
   }
 

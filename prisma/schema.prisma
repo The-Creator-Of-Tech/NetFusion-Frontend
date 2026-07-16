@@ -135,10 +135,17 @@ model Note {
 // ─── TimelineEntry ────────────────────────────────────────────────────────────
 
 model TimelineEntry {
-  id        String   @id @default(uuid())
-  action    String
-  metadata  Json?
-  createdAt DateTime @default(now())
+  id             String   @id @default(uuid())
+  // Human-readable description (legacy field kept for compat)
+  action         String
+  // Unified schema fields
+  source         String   @default("system")   // e.g. "workflow", "nmap", "ai", "ioc", "asset", "finding", "note", "member", "manual", "capture"
+  title          String?
+  severity       String?                        // CRITICAL | HIGH | MEDIUM | LOW | INFO
+  executionId    String?                        // workflow execution / playbook run id
+  investigationId String?                       // investigation / case id
+  metadata       Json?
+  createdAt      DateTime @default(now())
 
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

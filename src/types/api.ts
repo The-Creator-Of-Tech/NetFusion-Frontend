@@ -60,12 +60,21 @@ export interface Note {
 }
 
 export interface TimelineEntry {
-  id: string;
-  action: string;
-  metadata: any | null;
-  createdAt: string;
-  projectId: string;
-  userId: string | null;
+  // Unified schema
+  eventId:         string;
+  projectId:       string;
+  executionId:     string | null;
+  investigationId: string | null;
+  source:          string;
+  title:           string;
+  description:     string;
+  severity:        string | null;
+  createdAt:       string;
+  metadata:        any | null;
+  user:            { id: string; name: string } | null;
+  // Legacy compat
+  id:              string;
+  action:          string;
 }
 
 export interface Attachment {
@@ -435,7 +444,7 @@ export interface Rule {
   updatedAt: string;
 }
 
-export type AutomationStatus = 'running' | 'completed' | 'failed' | 'pending' | 'cancelled' | 'paused' | 'retrying' | 'scheduled';
+export type AutomationStatus = 'queued' | 'running' | 'completed' | 'failed' | 'pending' | 'cancelled' | 'paused' | 'retrying' | 'scheduled';
 export type AutomationTrigger = 'manual' | 'finding' | 'alert' | 'schedule' | 'rule' | 'playbook';
 
 export interface AutomationLog {
@@ -515,6 +524,21 @@ export interface CaseFlow {
   updatedAt: string;
 }
 
+// Phase 2: typed artifact model
+export interface WorkflowArtifact {
+  artifactId: string;
+  name: string;
+  type: 'json' | 'xml' | 'pcap' | 'txt' | 'markdown' | 'csv' | 'report' | string;
+  mimeType: string;
+  producerExecutor: string;
+  stepId: string;
+  executionId: string;
+  createdAt: string;
+  metadata: Record<string, unknown>;
+  location: string;
+  data?: unknown;
+}
+
 export interface WorkflowExecution {
   id: string;
   type: 'playbook' | 'rule' | 'automation';
@@ -528,8 +552,19 @@ export interface WorkflowExecution {
   error?: string;
   logs: AutomationLog[];
   progress?: number;
+  currentStep?: string;
   projectId: string;
   createdAt: string;
+  // Phase 2: runtime context fields
+  variables?: Record<string, unknown>;
+  artifacts?: WorkflowArtifact[];
+  artifactsCount?: number;
+  stepOutputs?: Record<string, unknown>;
+  timelineEvents?: Array<{ timestamp: string; title: string; description: string }>;
+  // UI monitor fields
+  currentExecutor?: string;
+  currentAction?: string;
+  returnedSummary?: string;
 }
 
 export interface WorkflowStatistics {

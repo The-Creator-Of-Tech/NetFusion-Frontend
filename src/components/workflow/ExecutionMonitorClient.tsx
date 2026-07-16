@@ -6,12 +6,47 @@ import { useWorkflowStatistics } from "@/hooks/useWorkflowStatistics";
 import { usePagination } from "@/hooks/usePagination";
 import type { AutomationStatus } from "@/types/api";
 
+// ── Expandable panel component ────────────────────────────────────────────────
+function ExpandablePanel({
+  title,
+  badge,
+  badgeColor = "text-muted",
+  children,
+  defaultOpen = false,
+}: {
+  title: string;
+  badge?: string | number;
+  badgeColor?: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border border-border rounded-xl overflow-hidden">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-surface-2/60 hover:bg-surface-2 transition-colors text-left"
+      >
+        <span className="text-[10px] font-bold uppercase tracking-widest text-muted/70">{title}</span>
+        <span className="flex items-center gap-2">
+          {badge !== undefined && (
+            <span className={`text-xs font-mono font-semibold ${badgeColor}`}>{badge}</span>
+          )}
+          <span className="text-muted text-xs">{open ? "▲" : "▼"}</span>
+        </span>
+      </button>
+      {open && <div className="p-4 bg-surface/60">{children}</div>}
+    </div>
+  );
+}
+
 const POLL_INTERVAL_MS = 5000;
 
 // playbookId comes from URL params — survives refresh and direct navigation.
 interface Props { projectId: string; playbookId: string }
 
 const STATUS_STYLE: Record<string, { bg: string; text: string; dot: string }> = {
+  queued:    { bg: "bg-indigo-500/10", text: "text-indigo-400", dot: "bg-indigo-400 animate-pulse" },
   running:   { bg: "bg-green-500/10",  text: "text-green-400",  dot: "bg-green-400 animate-pulse" },
   completed: { bg: "bg-accent/10",     text: "text-accent",     dot: "bg-accent" },
   failed:    { bg: "bg-red-500/10",    text: "text-red-400",    dot: "bg-red-400" },
@@ -29,7 +64,7 @@ function formatDuration(ms?: number) {
   return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
 }
 
-const STATUS_FILTER_OPTIONS: (AutomationStatus | 'ALL')[] = ['ALL','running','completed','failed','pending','cancelled','scheduled'];
+const STATUS_FILTER_OPTIONS: (AutomationStatus | 'ALL')[] = ['ALL','queued','running','completed','failed','pending','cancelled','scheduled'];
 
 export default function ExecutionMonitorClient({ projectId, playbookId }: Props) {
   // Both projectId and playbookId come from URL params — source of truth is the URL.
@@ -40,7 +75,7 @@ export default function ExecutionMonitorClient({ projectId, playbookId }: Props)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const hasActiveExecutions = executions.some(
-    e => e.status === 'running' || e.status === 'pending' || e.status === 'retrying'
+    e => e.status === 'running' || e.status === 'pending' || e.status === 'retrying' || e.status === 'queued'
   );
 
   useEffect(() => {
@@ -209,6 +244,9 @@ export default function ExecutionMonitorClient({ projectId, playbookId }: Props)
                             <span className="text-xs font-mono text-muted">{e.progress}%</span>
                           </div>
                         ) : <span className="text-xs text-muted">—</span>}
+                        {e.currentStep && (
+                          <p className="text-[10px] text-accent truncate max-w-[120px] mt-0.5">{e.currentStep}</p>
+                        )}
                       </td>
                     </tr>
                   );
@@ -226,27 +264,165 @@ export default function ExecutionMonitorClient({ projectId, playbookId }: Props)
             )}
           </div>
 
-          {selected && (
-            <div className="mt-5 bg-surface border border-border rounded-xl p-5 space-y-4">
-              <div className="flex items-start justify-between">
-                <p className="text-sm font-bold text-foreground">{selected.name}</p>
-                <button onClick={() => select(null)} className="text-muted hover:text-foreground text-sm">✕</button>
-              </div>
-              {selected.error && <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-xs text-red-400">{selected.error}</div>}
-              {selected.logs.length > 0 && (
-                <div>
-                  <p className="text-[10px] font-bold text-muted/50 uppercase tracking-widest mb-2">Logs</p>
-                  <div className="bg-black/40 rounded-lg p-3 max-h-48 overflow-y-auto space-y-1 font-mono text-xs">
-                    {selected.logs.map((l, i) => (
-                      <div key={i} className={l.level === 'error' ? 'text-red-400' : l.level === 'warn' ? 'text-yellow-400' : 'text-green-400'}>
-                        <span className="text-muted/50">[{new Date(l.timestamp).toLocaleTimeString()}]</span> {l.message}
-                      </div>
-                    ))}
+          {selected && (() => {
+            const sel = selected as any;
+            const variables = sel.variables ?? {};
+            const artifacts: any[] = sel.artifacts ?? [];
+            const stepOutputs = sel.stepOutputs ?? {};
+            const timelineEvents: any[] = sel.timelineEvents ?? [];
+            const varEntries = Object.entries(variables);
+            const stepOutputEntries = Object.entries(stepOutputs);
+
+            return (
+              <div className="mt-5 bg-surface border border-border rounded-xl p-5 space-y-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-sm font-bold text-foreground">{sel.name}</p>
+                    {sel.currentStep && (
+                      <p className="text-xs text-muted mt-1">
+                        Current Step: <span className="text-accent font-semibold">{sel.currentStep}</span>
+                      </p>
+                    )}
+                  </div>
+                  <button onClick={() => select(null)} className="text-muted hover:text-foreground text-sm">✕</button>
+                </div>
+
+                {sel.error && <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-xs text-red-400">{sel.error}</div>}
+
+                {/* Executor Monitor */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-surface-2/40 border border-border rounded-xl p-4 text-xs">
+                  <div>
+                    <p className="text-[10px] font-bold text-muted/50 uppercase tracking-widest mb-0.5">Current Executor</p>
+                    <p className="font-semibold text-foreground font-mono truncate">{sel.currentExecutor || 'ManualExecutor'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-muted/50 uppercase tracking-widest mb-0.5">Current Action</p>
+                    <p className="font-semibold text-foreground truncate">{sel.currentAction || 'Idle'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-muted/50 uppercase tracking-widest mb-0.5">Artifacts</p>
+                    <p className="font-semibold text-foreground font-mono">{sel.artifactsCount ?? artifacts.length}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-muted/50 uppercase tracking-widest mb-0.5">Duration</p>
+                    <p className="font-semibold text-foreground font-mono">{formatDuration(sel.duration)}</p>
                   </div>
                 </div>
-              )}
-            </div>
-          )}
+
+                {sel.returnedSummary && (
+                  <div className="bg-accent/5 border border-accent/10 rounded-xl p-4 text-xs space-y-1">
+                    <p className="text-[10px] font-bold text-accent uppercase tracking-widest">Returned Summary</p>
+                    <p className="text-foreground leading-relaxed whitespace-pre-wrap">{sel.returnedSummary}</p>
+                  </div>
+                )}
+
+                {/* ── Variables panel ──────────────────────────────────────── */}
+                <ExpandablePanel
+                  title="Variables"
+                  badge={varEntries.length}
+                  badgeColor={varEntries.length > 0 ? "text-accent" : "text-muted"}
+                  defaultOpen={varEntries.length > 0}
+                >
+                  {varEntries.length === 0 ? (
+                    <p className="text-xs text-muted italic">No variables set yet.</p>
+                  ) : (
+                    <div className="space-y-1.5 max-h-52 overflow-y-auto">
+                      {varEntries.map(([k, v]) => (
+                        <div key={k} className="flex gap-2 text-xs font-mono">
+                          <span className="text-accent/80 shrink-0 min-w-[8rem] truncate">{k}</span>
+                          <span className="text-muted">=</span>
+                          <span className="text-foreground/80 truncate">
+                            {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </ExpandablePanel>
+
+                {/* ── Artifacts panel ──────────────────────────────────────── */}
+                <ExpandablePanel
+                  title="Artifacts"
+                  badge={artifacts.length}
+                  badgeColor={artifacts.length > 0 ? "text-yellow-400" : "text-muted"}
+                  defaultOpen={artifacts.length > 0}
+                >
+                  {artifacts.length === 0 ? (
+                    <p className="text-xs text-muted italic">No artifacts produced yet.</p>
+                  ) : (
+                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                      {artifacts.map((a: any) => (
+                        <div key={a.artifactId} className="bg-surface-2/60 border border-border rounded-lg p-3 text-xs space-y-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold text-foreground truncate">{a.name}</span>
+                            <span className="text-[10px] font-mono bg-surface px-1.5 py-0.5 rounded border border-border text-muted shrink-0">{a.type}</span>
+                          </div>
+                          <div className="text-muted font-mono text-[10px]">id: {a.artifactId}</div>
+                          {a.producerExecutor && (
+                            <div className="text-muted/70">executor: <span className="text-foreground/70">{a.producerExecutor}</span></div>
+                          )}
+                          {a.metadata && Object.keys(a.metadata).length > 0 && (
+                            <div className="text-muted/60 truncate">
+                              {Object.entries(a.metadata).map(([mk, mv]) =>
+                                <span key={mk} className="mr-2">{mk}: <span className="text-foreground/60">{String(mv)}</span></span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </ExpandablePanel>
+
+                {/* ── Step Outputs panel ───────────────────────────────────── */}
+                <ExpandablePanel
+                  title="Step Outputs"
+                  badge={stepOutputEntries.length}
+                  badgeColor={stepOutputEntries.length > 0 ? "text-green-400" : "text-muted"}
+                  defaultOpen={stepOutputEntries.length > 0}
+                >
+                  {stepOutputEntries.length === 0 ? (
+                    <p className="text-xs text-muted italic">No step outputs yet.</p>
+                  ) : (
+                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                      {stepOutputEntries.map(([stepId, output]: [string, any]) => (
+                        <div key={stepId} className="bg-surface-2/60 border border-border rounded-lg p-3 text-xs">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="font-semibold text-foreground truncate">
+                              {output?.title || output?.stepTitle || stepId}
+                            </span>
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                              output?.status === 'EXECUTED' || output?.status === 'completed'
+                                ? 'bg-accent/10 text-accent'
+                                : output?.status === 'FAILED'
+                                ? 'bg-red-500/10 text-red-400'
+                                : 'bg-surface text-muted border border-border'
+                            }`}>{output?.status || '—'}</span>
+                          </div>
+                          <pre className="text-muted/80 font-mono text-[10px] whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
+                            {JSON.stringify(output?.outputs ?? output, null, 2)}
+                          </pre>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </ExpandablePanel>
+
+                {/* ── Logs panel ───────────────────────────────────────────── */}
+                {sel.logs && sel.logs.length > 0 && (
+                  <ExpandablePanel title="Logs" badge={sel.logs.length} defaultOpen={true}>
+                    <div className="bg-black/40 rounded-lg p-3 max-h-48 overflow-y-auto space-y-1 font-mono text-xs">
+                      {sel.logs.map((l: any, i: number) => (
+                        <div key={i} className={l.level === 'error' ? 'text-red-400' : l.level === 'warn' ? 'text-yellow-400' : 'text-green-400'}>
+                          <span className="text-muted/50">[{new Date(l.timestamp).toLocaleTimeString()}]</span> {l.message}
+                        </div>
+                      ))}
+                    </div>
+                  </ExpandablePanel>
+                )}
+              </div>
+            );
+          })()}
         </>
       )}
     </div>
