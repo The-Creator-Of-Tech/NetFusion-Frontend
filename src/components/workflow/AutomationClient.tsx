@@ -34,7 +34,7 @@ export default function AutomationClient({ projectId }: Props) {
 
   const filtered = automations.filter(a => {
     const q = search.toLowerCase();
-    const matchQ = !search || a.name.toLowerCase().includes(q) || (a.playbookName ?? "").toLowerCase().includes(q) || a.trigger.toLowerCase().includes(q);
+    const matchQ = !search || (a.name || "").toLowerCase().includes(q) || (a.playbookName ?? "").toLowerCase().includes(q) || (a.trigger || "").toLowerCase().includes(q);
     const matchStatus = statusFilter === 'ALL' || a.status === statusFilter;
     return matchQ && matchStatus;
   });

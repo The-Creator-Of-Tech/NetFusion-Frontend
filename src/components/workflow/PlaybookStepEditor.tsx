@@ -9,8 +9,10 @@
  * relatedCves, relatedMitre, relatedIocs).
  */
 
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import type { PlaybookStep, StepType } from "@/types/api";
+import ActionCatalog, { ACTION_DEFINITIONS } from "./ActionCatalog";
+import ConfigForm from "./ConfigForm";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -23,6 +25,17 @@ export const STEP_TYPES: { value: StepType; label: string; color: string }[] = [
   { value: "notification",   label: "Notification",   color: "text-yellow-400 bg-yellow-500/10"  },
   { value: "manual",         label: "Manual",         color: "text-gray-400   bg-gray-500/10"    },
   { value: "automated",      label: "Automated",      color: "text-cyan-400   bg-cyan-500/10"    },
+];
+
+export const EXECUTORS: { value: string; label: string }[] = [
+  { value: "manual", label: "Manual" },
+  { value: "nmap", label: "Nmap" },
+  { value: "packet_capture", label: "Packet Capture" },
+  { value: "tshark", label: "TShark" },
+  { value: "ioc", label: "IOC Analysis" },
+  { value: "mitre", label: "MITRE Mapping" },
+  { value: "ai", label: "AI" },
+  { value: "report", label: "Report" },
 ];
 
 function stepTypeStyle(type: StepType): string {
@@ -40,6 +53,7 @@ function blankStep(order: number): PlaybookStep {
     id: crypto.randomUUID(),
     name: "",
     type: "manual",
+    executor: "manual",
     description: "",
     expectedOutcome: "",
     relatedCves: [],
@@ -120,19 +134,52 @@ function ChipInput({
 
 interface StepFormProps {
   step: PlaybookStep;
+  steps: PlaybookStep[];
   onSave: (s: PlaybookStep) => void;
   onCancel: () => void;
 }
 
-function StepForm({ step, onSave, onCancel }: StepFormProps) {
+function StepForm({ step, steps, onSave, onCancel }: StepFormProps) {
   const [name, setName]                   = useState(step.name);
   const [type, setType]                   = useState<StepType>(step.type);
+  const [executor, setExecutor]           = useState<string>(step.executor ?? "manual");
   const [description, setDescription]     = useState(step.description ?? "");
   const [expectedOutcome, setExpected]    = useState(step.expectedOutcome ?? "");
   const [relatedCves, setCves]            = useState<string[]>(step.relatedCves ?? []);
   const [relatedMitre, setMitre]          = useState<string[]>(step.relatedMitre ?? []);
   const [relatedIocs, setIocs]            = useState<string[]>(step.relatedIocs ?? []);
+  const [config, setConfig]               = useState<Record<string, any>>(step.config ?? {});
   const [err, setErr]                     = useState("");
+
+  const configSchema = useMemo(() => {
+    // 1. Try to match by step name or title
+    let def = ACTION_DEFINITIONS.find(d => d.name.toLowerCase() === step.name.toLowerCase());
+    // 2. Try to match by executor / action id
+    if (!def) {
+      def = ACTION_DEFINITIONS.find(d => d.executor === executor) || ACTION_DEFINITIONS.find(d => d.id === executor);
+    }
+    return def?.configSchema ?? {};
+  }, [executor, step.name]);
+
+  // Whenever executor changes, look up schema and populate defaults for missing keys
+  useEffect(() => {
+    let def = ACTION_DEFINITIONS.find(d => d.name.toLowerCase() === step.name.toLowerCase());
+    if (!def || def.executor !== executor) {
+      def = ACTION_DEFINITIONS.find(d => d.executor === executor) || ACTION_DEFINITIONS.find(d => d.id === executor);
+    }
+    const schema = def?.configSchema ?? {};
+    const newConfig = { ...config };
+    let changed = false;
+    Object.entries(schema).forEach(([key, field]: [string, any]) => {
+      if (newConfig[key] === undefined && field.default !== undefined) {
+        newConfig[key] = field.default;
+        changed = true;
+      }
+    });
+    if (changed) {
+      setConfig(newConfig);
+    }
+  }, [executor]);
 
   function saveStep() {
     if (!name.trim()) { setErr("Step name is required"); return; }
@@ -140,11 +187,13 @@ function StepForm({ step, onSave, onCancel }: StepFormProps) {
       ...step,
       name: name.trim(),
       type,
+      executor,
       description:     description.trim() || undefined,
       expectedOutcome: expectedOutcome.trim() || undefined,
       relatedCves:     relatedCves.length  ? relatedCves  : undefined,
       relatedMitre:    relatedMitre.length ? relatedMitre : undefined,
       relatedIocs:     relatedIocs.length  ? relatedIocs  : undefined,
+      config:          config,
     });
   }
 
@@ -185,6 +234,20 @@ function StepForm({ step, onSave, onCancel }: StepFormProps) {
           </select>
         </div>
 
+        {/* Executor */}
+        <div>
+          <label className="block text-xs font-semibold text-muted mb-1">Executor</label>
+          <select
+            value={executor}
+            onChange={(e) => setExecutor(e.target.value)}
+            className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+          >
+            {EXECUTORS.map((e) => (
+              <option key={e.value} value={e.value}>{e.label}</option>
+            ))}
+          </select>
+        </div>
+
         {/* Description */}
         <div className="col-span-2">
           <label className="block text-xs font-semibold text-muted mb-1">Description</label>
@@ -209,6 +272,22 @@ function StepForm({ step, onSave, onCancel }: StepFormProps) {
           />
         </div>
       </div>
+
+      {/* Render ConfigForm here if configSchema has properties */}
+      {Object.keys(configSchema).length > 0 && (
+        <div className="border-t border-border/50 pt-3 mt-3">
+          <h4 className="text-xs font-bold text-foreground mb-3 uppercase tracking-wider">
+            Step Configuration
+          </h4>
+          <ConfigForm
+            schema={configSchema}
+            value={config}
+            onChange={setConfig}
+            allSteps={steps}
+            currentStep={step}
+          />
+        </div>
+      )}
 
       {/* Chip inputs */}
       <ChipInput
@@ -304,6 +383,9 @@ function StepRow({ step, index, total, onEdit, onDelete, onMoveUp, onMoveDown }:
           <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${stepTypeStyle(step.type)}`}>
             {stepTypeLabel(step.type)}
           </span>
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full text-muted bg-surface border border-border">
+            Exec: {EXECUTORS.find((e) => e.value === (step.executor ?? "manual"))?.label ?? step.executor ?? "manual"}
+          </span>
           <p className="text-xs font-semibold text-foreground truncate">{step.name}</p>
         </div>
         {step.description && (
@@ -349,6 +431,31 @@ function StepRow({ step, index, total, onEdit, onDelete, onMoveUp, onMoveDown }:
   );
 }
 
+// ─── Mapper from Action Category/ID to StepType ───────────────────────────────
+
+function mapActionToStepType(category: string, actionId: string): StepType {
+  if (actionId === "delay") return "wait";
+  if (actionId === "condition") return "condition";
+  if (actionId === "manual_approval") return "manual";
+
+  switch (category) {
+    case "Network Discovery":
+      return "detection";
+    case "Packet Analysis":
+    case "Threat Intelligence":
+      return "investigation";
+    case "AI":
+    case "Reporting":
+      return "automated";
+    case "Notification":
+      return "notification";
+    case "Workflow":
+      return "manual";
+    default:
+      return "manual";
+  }
+}
+
 // ─── Main exported component ──────────────────────────────────────────────────
 
 export interface PlaybookStepEditorProps {
@@ -359,11 +466,14 @@ export interface PlaybookStepEditorProps {
 export default function PlaybookStepEditor({ steps, onChange }: PlaybookStepEditorProps) {
   // null = no form open; "new" = adding; string id = editing that step
   const [editing, setEditing] = useState<"new" | string | null>(null);
+  const [addingStepAction, setAddingStepAction] = useState(false);
+  const [draftStep, setDraftStep] = useState<PlaybookStep | null>(null);
 
   function handleAdd(saved: PlaybookStep) {
     const updated = [...steps, { ...saved, order: steps.length }];
     onChange(updated.map((s, i) => ({ ...s, order: i })));
     setEditing(null);
+    setDraftStep(null);
   }
 
   function handleEdit(saved: PlaybookStep) {
@@ -389,59 +499,88 @@ export default function PlaybookStepEditor({ steps, onChange }: PlaybookStepEdit
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-bold text-muted uppercase tracking-widest">
-          Steps ({steps.length})
-        </p>
-        <button
-          type="button"
-          onClick={() => setEditing("new")}
-          disabled={editing !== null}
-          className="px-2.5 py-1 text-xs font-semibold bg-accent text-white rounded-lg hover:bg-accent/80 transition-colors disabled:opacity-50"
-        >
-          + Add Step
-        </button>
-      </div>
-
-      {/* Existing steps */}
-      {steps.length === 0 && editing !== "new" && (
-        <div className="flex flex-col items-center justify-center py-6 border border-dashed border-border rounded-xl text-center">
-          <p className="text-muted text-xs mb-1">No steps yet</p>
-          <p className="text-muted text-[11px]">Click &quot;+ Add Step&quot; to start building your playbook</p>
-        </div>
-      )}
-
-      <div className="space-y-2">
-        {steps.map((step, i) =>
-          editing === step.id ? (
-            <StepForm
-              key={step.id}
-              step={editingStep ?? step}
-              onSave={handleEdit}
-              onCancel={() => setEditing(null)}
-            />
-          ) : (
-            <StepRow
-              key={step.id}
-              step={step}
-              index={i}
-              total={steps.length}
-              onEdit={() => setEditing(step.id)}
-              onDelete={() => handleDelete(step.id)}
-              onMoveUp={() => handleMove(i, -1)}
-              onMoveDown={() => handleMove(i, 1)}
-            />
-          )
-        )}
-      </div>
-
-      {/* New step form */}
-      {editing === "new" && (
-        <StepForm
-          step={blankStep(steps.length)}
-          onSave={handleAdd}
-          onCancel={() => setEditing(null)}
+      {addingStepAction ? (
+        <ActionCatalog
+          onSelect={(action) => {
+            setDraftStep({
+              id: crypto.randomUUID(),
+              name: action.name,
+              type: mapActionToStepType(action.category, action.id),
+              executor: action.executor,
+              description: action.description,
+              expectedOutcome: "",
+              relatedCves: [],
+              relatedMitre: [],
+              relatedIocs: [],
+              order: steps.length,
+            });
+            setAddingStepAction(false);
+            setEditing("new");
+          }}
+          onCancel={() => setAddingStepAction(false)}
         />
+      ) : (
+        <>
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-muted uppercase tracking-widest">
+              Steps ({steps.length})
+            </p>
+            <button
+              type="button"
+              onClick={() => setAddingStepAction(true)}
+              disabled={editing !== null || addingStepAction}
+              className="px-2.5 py-1 text-xs font-semibold bg-accent text-white rounded-lg hover:bg-accent/80 transition-colors disabled:opacity-50"
+            >
+              + Add Step
+            </button>
+          </div>
+
+          {/* Existing steps */}
+          {steps.length === 0 && editing !== "new" && (
+            <div className="flex flex-col items-center justify-center py-6 border border-dashed border-border rounded-xl text-center">
+              <p className="text-muted text-xs mb-1">No steps yet</p>
+              <p className="text-muted text-[11px]">Click &quot;+ Add Step&quot; to start building your playbook</p>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            {steps.map((step, i) =>
+              editing === step.id ? (
+                <StepForm
+                  key={step.id}
+                  step={editingStep ?? step}
+                  steps={steps}
+                  onSave={handleEdit}
+                  onCancel={() => setEditing(null)}
+                />
+              ) : (
+                <StepRow
+                  key={step.id}
+                  step={step}
+                  index={i}
+                  total={steps.length}
+                  onEdit={() => setEditing(step.id)}
+                  onDelete={() => handleDelete(step.id)}
+                  onMoveUp={() => handleMove(i, -1)}
+                  onMoveDown={() => handleMove(i, 1)}
+                />
+              )
+            )}
+          </div>
+
+          {/* New step form */}
+          {editing === "new" && (
+            <StepForm
+              step={draftStep || blankStep(steps.length)}
+              steps={steps}
+              onSave={handleAdd}
+              onCancel={() => {
+                setEditing(null);
+                setDraftStep(null);
+              }}
+            />
+          )}
+        </>
       )}
     </div>
   );

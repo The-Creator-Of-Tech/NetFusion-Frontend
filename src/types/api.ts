@@ -371,6 +371,7 @@ export interface PlaybookStep {
   id: string;
   name: string;
   type: StepType;
+  executor?: string;
   description?: string;
   order: number;
   /** Expected outcome / success criteria for this step */

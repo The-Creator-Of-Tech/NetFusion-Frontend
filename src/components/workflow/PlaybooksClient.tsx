@@ -160,7 +160,7 @@ export default function PlaybooksClient({ projectId }: Props) {
 
   const filtered = playbooks.filter(p => {
     const q = search.toLowerCase();
-    const matchQ = !search || p.name.toLowerCase().includes(q) || (p.description ?? "").toLowerCase().includes(q);
+    const matchQ = !search || (p.name || "").toLowerCase().includes(q) || (p.description ?? "").toLowerCase().includes(q);
     const matchCat = catFilter === "ALL" || p.category === catFilter;
     const matchStatus = statusFilter === "ALL" || p.status === statusFilter;
     return matchQ && matchCat && matchStatus;

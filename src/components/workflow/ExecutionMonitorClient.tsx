@@ -101,7 +101,7 @@ export default function ExecutionMonitorClient({ projectId, playbookId }: Props)
 
   const filtered = executions.filter(e => {
     const q = search.toLowerCase();
-    const matchQ = !search || e.name.toLowerCase().includes(q) || e.type.toLowerCase().includes(q);
+    const matchQ = !search || (e.name || "").toLowerCase().includes(q) || (e.type || "").toLowerCase().includes(q);
     const matchStatus = statusFilter === 'ALL' || e.status === statusFilter;
     return matchQ && matchStatus;
   });

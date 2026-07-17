@@ -293,7 +293,7 @@ export default function LiveCapturePanel() {
         if (!res.ok) throw new Error(`Failed to load interfaces (${res.status})`);
         const data = await res.json();
         setInterfaces(data.interfaces ?? []);
-        if (data.interfaces?.length > 0) setSelectedIface(data.interfaces[0].id);
+        if (data.interfaces?.length > 0) setSelectedIface(data.interfaces[0].value);
       } catch (err) {
         setError(`Could not load interfaces: ${err instanceof Error ? err.message : String(err)}`);
       } finally {
@@ -1536,7 +1536,7 @@ export default function LiveCapturePanel() {
                     <option value="">No interfaces found</option>
                   ) : (
                     interfaces.map((iface) => (
-                      <option key={iface.id} value={iface.id}>{iface.name}</option>
+                      <option key={iface.value} value={iface.value}>{iface.label}</option>
                     ))
                   )}
                 </select>

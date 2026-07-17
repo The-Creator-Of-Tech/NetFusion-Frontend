@@ -1931,7 +1931,7 @@ describe('Section 28 — Filter / Search Logic', () => {
   function filterPlaybooks(pbs: Playbook[], search: string, cat: string, status: string): Playbook[] {
     return pbs.filter(p => {
       const q = search.toLowerCase();
-      const mQ = !search || p.name.toLowerCase().includes(q) || (p.description ?? '').toLowerCase().includes(q);
+      const mQ = !search || (p.name || "").toLowerCase().includes(q) || (p.description ?? '').toLowerCase().includes(q);
       const mC = cat === 'ALL' || p.category === cat;
       const mS = status === 'ALL' || p.status === status;
       return mQ && mC && mS;
@@ -1941,7 +1941,7 @@ describe('Section 28 — Filter / Search Logic', () => {
   function filterRules(rules: Rule[], search: string, sev: string, cat: string): Rule[] {
     return rules.filter(r => {
       const q = search.toLowerCase();
-      const mQ = !search || r.name.toLowerCase().includes(q) || (r.description ?? '').toLowerCase().includes(q);
+      const mQ = !search || (r.name || "").toLowerCase().includes(q) || (r.description ?? '').toLowerCase().includes(q);
       const mS = sev === 'ALL' || r.severity === sev;
       const mC = cat === 'ALL' || r.category === cat;
       return mQ && mS && mC;
@@ -1951,7 +1951,7 @@ describe('Section 28 — Filter / Search Logic', () => {
   function filterCases(cases: CaseFlow[], search: string, status: string, priority: string): CaseFlow[] {
     return cases.filter(c => {
       const q = search.toLowerCase();
-      const mQ = !search || c.title.toLowerCase().includes(q) || (c.description ?? '').toLowerCase().includes(q);
+      const mQ = !search || (c.title || "").toLowerCase().includes(q) || (c.description ?? '').toLowerCase().includes(q);
       const mS = status === 'ALL' || c.status === status;
       const mP = priority === 'ALL' || c.priority === priority;
       return mQ && mS && mP;

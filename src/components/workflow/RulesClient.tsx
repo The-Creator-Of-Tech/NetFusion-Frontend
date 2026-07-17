@@ -26,7 +26,7 @@ export default function RulesClient({ projectId }: Props) {
 
   const filtered = rules.filter(r => {
     const q = search.toLowerCase();
-    const matchQ = !search || r.name.toLowerCase().includes(q) || (r.description ?? "").toLowerCase().includes(q);
+    const matchQ = !search || (r.name || "").toLowerCase().includes(q) || (r.description ?? "").toLowerCase().includes(q);
     const matchSev = sevFilter === "ALL" || r.severity === sevFilter;
     const matchCat = catFilter === "ALL" || r.category === catFilter;
     return matchQ && matchSev && matchCat;

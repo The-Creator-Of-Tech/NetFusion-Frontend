@@ -88,7 +88,7 @@ export default function CaseFlowClient({ projectId }: Props) {
 
   const filtered = cases.filter(c => {
     const q = search.toLowerCase();
-    const matchQ = !search || c.title.toLowerCase().includes(q) || (c.description ?? "").toLowerCase().includes(q);
+    const matchQ = !search || (c.title || "").toLowerCase().includes(q) || (c.description ?? "").toLowerCase().includes(q);
     const matchStatus = statusFilter === "ALL" || c.status === statusFilter;
     const matchPriority = priorityFilter === "ALL" || c.priority === priorityFilter;
     return matchQ && matchStatus && matchPriority;
