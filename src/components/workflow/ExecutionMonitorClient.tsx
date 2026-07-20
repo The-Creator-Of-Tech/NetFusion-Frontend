@@ -74,6 +74,131 @@ export default function ExecutionMonitorClient({ projectId, playbookId }: Props)
   const [search, setSearch] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // --- Execution Outputs / Enriched Artifacts State ---
+  const [enrichedArtifacts, setEnrichedArtifacts] = useState<any[]>([]);
+  const [artifactsLoading, setArtifactsLoading] = useState(false);
+  const [viewingArtifact, setViewingArtifact] = useState<any | null>(null);
+  const [viewingContent, setViewingContent] = useState<string | null>(null);
+  const [viewingLoading, setViewingLoading] = useState(false);
+  const [wiresharkOpening, setWiresharkOpening] = useState(false);
+  const [wiresharkError, setWiresharkError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Poll or fetch enriched artifacts when an execution is selected
+  useEffect(() => {
+    if (!selected?.id) {
+      setEnrichedArtifacts([]);
+      return;
+    }
+    
+    let active = true;
+    async function fetchEnrichedArtifacts() {
+      setArtifactsLoading(true);
+      try {
+        const res = await fetch(`/api/projects/${projectId}/workflow/executions/${selected?.id}/artifacts`);
+        const json = await res.json();
+        if (active && json.success && Array.isArray(json.data)) {
+          setEnrichedArtifacts(json.data);
+        }
+      } catch (err) {
+        console.error("Failed to load enriched artifacts:", err);
+      } finally {
+        if (active) setArtifactsLoading(false);
+      }
+    }
+    
+    fetchEnrichedArtifacts();
+    
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const isRunning = selected?.status ? ['running', 'pending', 'retrying', 'queued'].includes(selected.status.toLowerCase()) : false;
+    if (isRunning) {
+      interval = setInterval(() => {
+        fetchEnrichedArtifacts();
+      }, POLL_INTERVAL_MS);
+    }
+    
+    return () => {
+      active = false;
+      if (interval) clearInterval(interval);
+    };
+  }, [selected?.id, selected?.status, projectId]);
+
+  // Actions
+  const handleView = async (artifact: any) => {
+    setViewingArtifact(artifact);
+    setViewingContent(null);
+    setWiresharkError(null);
+    
+    if (artifact.data !== undefined && artifact.data !== null) {
+      if (typeof artifact.data === 'object') {
+        setViewingContent(JSON.stringify(artifact.data, null, 2));
+      } else {
+        setViewingContent(String(artifact.data));
+      }
+      return;
+    }
+    
+    setViewingLoading(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/workflow/executions/${selected?.id}/artifacts/${artifact.artifactId}/view`);
+      const contentType = res.headers.get('content-type') || '';
+      
+      if (contentType.includes('application/json')) {
+        const json = await res.json();
+        const contentData = json.data !== undefined ? json.data : json;
+        if (typeof contentData === 'object') {
+          setViewingContent(JSON.stringify(contentData, null, 2));
+        } else {
+          setViewingContent(String(contentData));
+        }
+      } else {
+        const text = await res.text();
+        setViewingContent(text);
+      }
+    } catch (err) {
+      console.error("Failed to load artifact view:", err);
+      setViewingContent("Error loading content.");
+    } finally {
+      setViewingLoading(false);
+    }
+  };
+
+  const handleDownload = (artifact: any) => {
+    const downloadUrl = `/api/projects/${projectId}/workflow/executions/${selected?.id}/artifacts/${artifact.artifactId}/download`;
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = artifact.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const handleOpenInWireshark = async (artifact: any) => {
+    setWiresharkOpening(true);
+    setWiresharkError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/workflow/executions/${selected?.id}/artifacts/${artifact.artifactId}/open-wireshark`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (!data.success) {
+        setWiresharkError(data.message || "Failed to open Wireshark.");
+      }
+    } catch (err) {
+      console.error("Wireshark launch error:", err);
+      setWiresharkError("Failed to communicate with agent backend.");
+    } finally {
+      setWiresharkOpening(false);
+    }
+  };
+
+  const handleCopy = () => {
+    if (!viewingContent) return;
+    navigator.clipboard.writeText(viewingContent);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const hasActiveExecutions = executions.some(
     e => e.status === 'running' || e.status === 'pending' || e.status === 'retrying' || e.status === 'queued'
   );
@@ -340,39 +465,103 @@ export default function ExecutionMonitorClient({ projectId, playbookId }: Props)
                   )}
                 </ExpandablePanel>
 
-                {/* ── Artifacts panel ──────────────────────────────────────── */}
-                <ExpandablePanel
-                  title="Artifacts"
-                  badge={artifacts.length}
-                  badgeColor={artifacts.length > 0 ? "text-yellow-400" : "text-muted"}
-                  defaultOpen={artifacts.length > 0}
-                >
-                  {artifacts.length === 0 ? (
-                    <p className="text-xs text-muted italic">No artifacts produced yet.</p>
-                  ) : (
-                    <div className="space-y-3 max-h-64 overflow-y-auto">
-                      {artifacts.map((a: any) => (
-                        <div key={a.artifactId} className="bg-surface-2/60 border border-border rounded-lg p-3 text-xs space-y-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-semibold text-foreground truncate">{a.name}</span>
-                            <span className="text-[10px] font-mono bg-surface px-1.5 py-0.5 rounded border border-border text-muted shrink-0">{a.type}</span>
-                          </div>
-                          <div className="text-muted font-mono text-[10px]">id: {a.artifactId}</div>
-                          {a.producerExecutor && (
-                            <div className="text-muted/70">executor: <span className="text-foreground/70">{a.producerExecutor}</span></div>
-                          )}
-                          {a.metadata && Object.keys(a.metadata).length > 0 && (
-                            <div className="text-muted/60 truncate">
-                              {Object.entries(a.metadata).map(([mk, mv]) =>
-                                <span key={mk} className="mr-2">{mk}: <span className="text-foreground/60">{String(mv)}</span></span>
+                {/* ── Premium Execution Outputs Section (When COMPLETED and has artifacts) ── */}
+                {(() => {
+                  const isCompleted = sel.status.toLowerCase() === 'completed';
+                  const artifactsToUse = enrichedArtifacts.length > 0 ? enrichedArtifacts : artifacts;
+                  const showExecutionOutputs = isCompleted && artifactsToUse.length > 0;
+                  
+                  if (showExecutionOutputs) {
+                    return (
+                      <div className="border border-border rounded-xl overflow-hidden bg-surface-2/30">
+                        <div className="px-4 py-3 bg-surface-2 border-b border-border flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-accent flex items-center gap-1.5">
+                            📦 Execution Outputs
+                          </span>
+                          <span className="text-xs font-mono font-semibold text-accent bg-accent/10 px-2 py-0.5 rounded-full">
+                            {artifactsToUse.length} file{artifactsToUse.length !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                        <div className="p-4 space-y-3">
+                          {artifactsToUse.map((a: any) => (
+                            <div key={a.artifactId} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface border border-border rounded-xl p-4 transition-all hover:border-accent/40">
+                              <div className="flex items-center gap-3">
+                                <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-surface-2 border border-border text-xs font-bold font-mono">
+                                  {getArtifactIcon(a.type)}
+                                </div>
+                                <div className="space-y-0.5 max-w-[280px] sm:max-w-[400px]">
+                                  <p className="text-xs font-bold text-foreground truncate">{a.name}</p>
+                                  <div className="flex flex-wrap items-center gap-x-2 text-[10px] text-muted">
+                                    <span className="uppercase font-semibold text-accent/80">{a.type}</span>
+                                    <span>•</span>
+                                    <span>Generated by <span className="text-foreground/75 font-mono">{a.producerExecutor || 'UnknownExecutor'}</span></span>
+                                    <span>•</span>
+                                    <span>{formatFileSize(a.metadata?.fileSize)}</span>
+                                    <span>•</span>
+                                    <span>{formatTimestamp(a.createdAt)}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 self-end sm:self-center">
+                                <button
+                                  onClick={() => handleView(a)}
+                                  className="px-3 py-1.5 text-xs border border-border rounded-lg bg-surface-2 hover:bg-surface hover:text-foreground text-muted transition-colors font-medium"
+                                >
+                                  View
+                                </button>
+                                <button
+                                  onClick={() => handleDownload(a)}
+                                  className="px-3 py-1.5 text-xs bg-accent hover:bg-accent/90 text-accent-foreground font-medium rounded-lg transition-colors"
+                                >
+                                  Download
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  }
+                  
+                  // Hide completely if completed but no artifacts
+                  if (isCompleted) return null;
+                  
+                  // Fallback section for non-completed states if artifacts exist
+                  if (artifacts.length > 0) {
+                    return (
+                      <ExpandablePanel
+                        title="Artifacts"
+                        badge={artifacts.length}
+                        badgeColor="text-yellow-400"
+                        defaultOpen={artifacts.length > 0}
+                      >
+                        <div className="space-y-3 max-h-64 overflow-y-auto">
+                          {artifacts.map((a: any) => (
+                            <div key={a.artifactId} className="bg-surface-2/60 border border-border rounded-lg p-3 text-xs space-y-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-semibold text-foreground truncate">{a.name}</span>
+                                <span className="text-[10px] font-mono bg-surface px-1.5 py-0.5 rounded border border-border text-muted shrink-0">{a.type}</span>
+                              </div>
+                              <div className="text-muted font-mono text-[10px]">id: {a.artifactId}</div>
+                              {a.producerExecutor && (
+                                <div className="text-muted/70">executor: <span className="text-foreground/70">{a.producerExecutor}</span></div>
+                              )}
+                              {a.metadata && Object.keys(a.metadata).length > 0 && (
+                                <div className="text-muted/60 truncate">
+                                  {Object.entries(a.metadata).map(([mk, mv]) =>
+                                    <span key={mk} className="mr-2">{mk}: <span className="text-foreground/60">{String(mv)}</span></span>
+                                  )}
+                                </div>
                               )}
                             </div>
-                          )}
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </ExpandablePanel>
+                      </ExpandablePanel>
+                    );
+                  }
+                  
+                  return null;
+                })()}
 
                 {/* ── Step Outputs panel ───────────────────────────────────── */}
                 <ExpandablePanel
@@ -425,6 +614,342 @@ export default function ExecutionMonitorClient({ projectId, playbookId }: Props)
           })()}
         </>
       )}
+
+      {/* ── Built-in Interactive Viewer Modal ── */}
+      {viewingArtifact && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-4xl bg-surface border border-border rounded-2xl shadow-2xl flex flex-col max-h-[85vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-surface-2 border border-border text-xs font-bold font-mono">
+                  {getArtifactIcon(viewingArtifact.type)}
+                </div>
+                <div>
+                  <h3 className="font-bold text-foreground text-sm">{viewingArtifact.name}</h3>
+                  <p className="text-[10px] text-muted uppercase tracking-wider">{viewingArtifact.type} artifact</p>
+                </div>
+              </div>
+              <button
+                onClick={() => { setViewingArtifact(null); setViewingContent(null); }}
+                className="text-muted hover:text-foreground text-lg transition-colors p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 overflow-y-auto p-6 min-h-[200px] flex flex-col">
+              {viewingLoading ? (
+                <div className="flex-1 flex flex-col items-center justify-center py-10">
+                  <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin mb-3" />
+                  <p className="text-xs text-muted">Loading content...</p>
+                </div>
+              ) : (() => {
+                const type = viewingArtifact.type.toLowerCase();
+                
+                if (type === 'pcap' || type === 'pcapng') {
+                  const meta = viewingArtifact.metadata || {};
+                  return (
+                    <div className="space-y-6 max-w-lg mx-auto py-4">
+                      <div className="bg-surface-2 border border-border rounded-xl p-5 space-y-4">
+                        <h4 className="font-semibold text-foreground text-xs uppercase tracking-wider text-muted">PCAP Capture Metadata</h4>
+                        <div className="grid grid-cols-2 gap-4 text-xs">
+                          <div>
+                            <p className="text-muted mb-0.5">Interface</p>
+                            <p className="font-semibold text-foreground">{meta.interface || '—'}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted mb-0.5">Capture Filter</p>
+                            <p className="font-semibold text-foreground font-mono truncate max-w-[180px]">{meta.captureFilter || 'None'}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted mb-0.5">Duration</p>
+                            <p className="font-semibold text-foreground">{meta.duration !== undefined ? `${meta.duration} seconds` : '—'}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted mb-0.5">Packet Count</p>
+                            <p className="font-semibold text-foreground font-mono">{meta.packetCount !== undefined ? meta.packetCount.toLocaleString() : '—'}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted mb-0.5">File Size</p>
+                            <p className="font-semibold text-foreground font-mono">{formatFileSize(meta.fileSize)}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        {viewingArtifact.wiresharkSupported && (
+                          <button
+                            onClick={() => handleOpenInWireshark(viewingArtifact)}
+                            disabled={wiresharkOpening}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-750 disabled:opacity-50 text-white font-semibold rounded-xl transition-colors text-xs"
+                          >
+                            {wiresharkOpening ? (
+                              <>
+                                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                Opening Wireshark...
+                              </>
+                            ) : (
+                              <>🌐 Open in Wireshark</>
+                            )}
+                          </button>
+                        )}
+                        {wiresharkError && (
+                          <p className="text-red-450 text-[11px] text-center font-medium">{wiresharkError}</p>
+                        )}
+                        <button
+                          onClick={() => handleDownload(viewingArtifact)}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-border bg-surface hover:bg-surface-hover text-foreground font-semibold rounded-xl transition-colors text-xs"
+                        >
+                          📥 Download Capture File
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (type === 'pdf') {
+                  const viewUrl = `/api/projects/${projectId}/workflow/executions/${selected?.id}/artifacts/${viewingArtifact.artifactId}/view`;
+                  return (
+                    <iframe
+                      src={viewUrl}
+                      className="w-full h-[60vh] border border-border rounded-xl bg-surface-2"
+                      title={viewingArtifact.name}
+                    />
+                  );
+                }
+
+                if (type.startsWith('image') || ['png', 'jpg', 'jpeg', 'gif', 'svg'].includes(type)) {
+                  const viewUrl = `/api/projects/${projectId}/workflow/executions/${selected?.id}/artifacts/${viewingArtifact.artifactId}/view`;
+                  return (
+                    <div className="flex-1 flex items-center justify-center">
+                      <img
+                        src={viewUrl}
+                        className="max-w-full max-h-[60vh] object-contain rounded-xl border border-border bg-surface-2"
+                        alt={viewingArtifact.name}
+                      />
+                    </div>
+                  );
+                }
+
+                if (type === 'markdown' || type === 'report') {
+                  return (
+                    <div className="prose prose-invert max-w-none text-xs select-text overflow-x-auto">
+                      {renderMarkdown(viewingContent || '')}
+                    </div>
+                  );
+                }
+
+                if (type === 'json') {
+                  return (
+                    <pre className="flex-1 font-mono text-xs text-foreground bg-surface-2 p-4 rounded-xl border border-border overflow-auto max-h-[60vh] whitespace-pre-wrap select-text">
+                      {viewingContent}
+                    </pre>
+                  );
+                }
+
+                if (type === 'csv') {
+                  const rows = viewingContent ? parseCSV(viewingContent) : [];
+                  if (rows.length === 0) return <p className="text-xs text-muted italic">Empty table.</p>;
+                  const headers = rows[0];
+                  const bodyRows = rows.slice(1);
+                  return (
+                    <div className="border border-border rounded-xl overflow-hidden bg-surface-2 max-h-[60vh] overflow-y-auto">
+                      <table className="w-full text-xs text-left border-collapse select-text">
+                        <thead>
+                          <tr className="border-b border-border bg-surface">
+                            {headers.map((h, i) => (
+                              <th key={i} className="px-4 py-2 font-semibold text-muted border-r border-border last:border-0">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {bodyRows.map((row, rowIdx) => (
+                            <tr key={rowIdx} className="border-b border-border last:border-0 hover:bg-surface/30">
+                              {row.map((cell, cellIdx) => (
+                                <td key={cellIdx} className="px-4 py-2 text-foreground border-r border-border last:border-0">{cell}</td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                }
+
+                return (
+                  <pre className="flex-1 font-mono text-xs text-foreground bg-surface-2 p-4 rounded-xl border border-border overflow-auto max-h-[60vh] whitespace-pre-wrap select-text">
+                    {viewingContent || 'No preview content.'}
+                  </pre>
+                );
+              })()}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-border bg-surface-2 flex items-center justify-between text-xs">
+              <div className="text-muted font-mono text-[10px]">
+                ID: {viewingArtifact.artifactId}
+              </div>
+              <div className="flex gap-2">
+                {isTextBased(viewingArtifact.type) && (
+                  <button
+                    onClick={handleCopy}
+                    className="px-3 py-1.5 border border-border rounded-lg bg-surface hover:bg-surface-hover text-foreground font-medium transition-colors"
+                  >
+                    {copied ? "Copied!" : "Copy to Clipboard"}
+                  </button>
+                )}
+                <button
+                  onClick={() => handleDownload(viewingArtifact)}
+                  className="px-3 py-1.5 bg-accent hover:bg-accent/90 text-accent-foreground font-medium rounded-lg transition-colors"
+                >
+                  Download Original
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+// ── Execution Outputs Custom Helpers ───────────────────────────────────────────
+
+function getArtifactIcon(type: string): string {
+  const t = type.toLowerCase();
+  if (t === 'markdown' || t === 'report') return '📝';
+  if (t === 'json') return '{ }';
+  if (t === 'xml') return 'XML';
+  if (t === 'pcap' || t === 'pcapng') return '🌐';
+  if (t === 'csv') return '📊';
+  if (t === 'pdf') return '📕';
+  if (t.startsWith('image') || ['png', 'jpg', 'jpeg', 'gif', 'svg'].includes(t)) return '🖼️';
+  return '📄';
+}
+
+function formatFileSize(bytes?: number): string {
+  if (bytes === undefined || bytes === null || isNaN(bytes)) return '—';
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function formatTimestamp(isoStr?: string): string {
+  if (!isoStr) return '—';
+  try {
+    const d = new Date(isoStr);
+    return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return isoStr;
+  }
+}
+
+function isTextBased(type: string): boolean {
+  const t = type.toLowerCase();
+  return ['markdown', 'report', 'json', 'txt', 'xml', 'csv'].includes(t);
+}
+
+function parseCSV(text: string): string[][] {
+  const lines = text.split('\n');
+  return lines
+    .map(line => {
+      const result: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          result.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      result.push(current.trim());
+      return result.map(cell => cell.replace(/^"|"$/g, '').trim());
+    })
+    .filter(row => row.length > 0 && row.some(cell => cell !== ""));
+}
+
+function inlineFormatting(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (/^\*\*[^*]+\*\*$/.test(part)) {
+      return (
+        <strong key={i} className="font-semibold text-foreground">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    return part;
+  });
+}
+
+function renderMarkdown(text: string): React.ReactNode {
+  if (!text) return null;
+  const parts = text.split(/(```[\s\S]*?```)/g);
+
+  return parts.map((part, index) => {
+    if (part.startsWith("```") && part.endsWith("```")) {
+      const content = part.slice(3, -3).trim();
+      const lines = content.split("\n");
+      const firstLine = lines[0] || "";
+      const hasLanguage = !firstLine.includes(" ") && firstLine.length > 0 && firstLine.length < 15;
+      const language = hasLanguage ? firstLine : "code";
+      const code = hasLanguage ? lines.slice(1).join("\n") : content;
+
+      return (
+        <div key={index} className="my-3 overflow-hidden rounded-xl border border-border bg-surface-2 shadow-inner">
+          <div className="flex items-center justify-between px-3.5 py-1.5 bg-surface border-b border-border text-xs text-muted font-mono">
+            <span className="capitalize">{language}</span>
+          </div>
+          <pre className="p-3.5 overflow-x-auto font-mono text-xs leading-relaxed text-foreground select-text">
+            <code>{code}</code>
+          </pre>
+        </div>
+      );
+    }
+
+    const lines = part.split("\n");
+    return lines.map((line, lineIdx) => {
+      const key = `${index}-${lineIdx}`;
+
+      if (/^[-*]\s/.test(line)) {
+        const content = line.replace(/^[-*]\s/, "");
+        return (
+          <div key={key} className="flex gap-2 mb-1 pl-1">
+            <span className="text-accent shrink-0 select-none">•</span>
+            <span className="text-foreground">{inlineFormatting(content)}</span>
+          </div>
+        );
+      }
+
+      if (/^#{1,4}\s/.test(line)) {
+        const level = (line.match(/^#+/) || ["#"])[0].length;
+        const content = line.replace(/^#+\s/, "");
+        const sizeClass = level === 1 ? "text-lg font-bold" : level === 2 ? "text-base font-semibold" : "text-sm font-semibold";
+        return (
+          <p key={key} className={`${sizeClass} text-foreground mt-3 mb-1.5`}>
+            {inlineFormatting(content)}
+          </p>
+        );
+      }
+
+      if (line.trim() === "") {
+        return <div key={key} className="h-2" />;
+      }
+
+      return (
+        <p key={key} className="mb-1 leading-relaxed">
+          {inlineFormatting(line)}
+        </p>
+      );
+    });
+  });
 }

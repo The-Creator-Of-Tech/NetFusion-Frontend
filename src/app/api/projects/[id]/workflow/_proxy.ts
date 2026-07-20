@@ -89,12 +89,24 @@ export async function proxyWorkflow(
       ...init,
     });
 
-    const contentType = upstream.headers.get('content-type') ?? 'application/json';
-    const body = await upstream.text();
+    // Read the response body as binary (ArrayBuffer) so that binary files
+    // (e.g. PCAP captures) are not corrupted by UTF-8 text decoding.
+    const body = await upstream.arrayBuffer();
+
+    // Forward Content-Type and Content-Disposition so the browser receives
+    // the correct MIME type and uses the server-specified download filename.
+    // Without Content-Disposition the browser ignores the artifact name and
+    // falls back to the URL path segment ("download"), causing the analysis
+    // artifact to be saved with the wrong filename / wrong file entirely.
+    const responseHeaders: Record<string, string> = {};
+    const contentType = upstream.headers.get('content-type');
+    if (contentType) responseHeaders['Content-Type'] = contentType;
+    const contentDisposition = upstream.headers.get('content-disposition');
+    if (contentDisposition) responseHeaders['Content-Disposition'] = contentDisposition;
 
     return new NextResponse(body, {
       status: upstream.status,
-      headers: { 'Content-Type': contentType },
+      headers: responseHeaders,
     });
   } catch (err) {
     console.error('[workflow proxy] upstream error:', backendUrl, err);
