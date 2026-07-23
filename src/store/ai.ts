@@ -81,11 +81,21 @@ export interface AiState {
   recentMemory: string[];
   searchQuery: string;
 
-  // ── Reasoning ──
+  // ── Reasoning (ATRE Integrated) ──
   reasoningSteps: string[];
   confidence: number;
   intermediateChain: string[];
   finalConclusion: string;
+  atreTrace: any[] | null;
+  atreHypotheses: any[] | null;
+  atreRecommendations: any[] | null;
+  atreAttackChain: any | null;
+  atreConfidenceBreakdown: any | null;
+  selectedTraceSessionId: string | null;
+  activeTraceDetail: any | null;
+  selectedStepIndex: number | null;
+  traceCache: Record<string, any>;
+  historySessions: any[];
 
   // ── Providers ──
   providers: Provider[];
@@ -98,6 +108,7 @@ export interface AiState {
 }
 
 const defaultProviders: Provider[] = [
+  { name: 'ATRE Threat Engine', model: 'atre-v1-graph-reasoner', status: 'online', latency: 210, cost: 0.0001 },
   { name: 'Groq', model: 'llama-3.3-70b-versatile', status: 'online', latency: 320, cost: 0.0002 },
   { name: 'OpenAI', model: 'gpt-4o', status: 'online', latency: 450, cost: 0.005 },
   { name: 'Anthropic', model: 'claude-3-5-sonnet', status: 'online', latency: 680, cost: 0.015 }
@@ -133,11 +144,21 @@ const initialState: AiState = {
   confidence: 95,
   intermediateChain: [],
   finalConclusion: '',
+  atreTrace: null,
+  atreHypotheses: null,
+  atreRecommendations: null,
+  atreAttackChain: null,
+  atreConfidenceBreakdown: null,
+  selectedTraceSessionId: null,
+  activeTraceDetail: null,
+  selectedStepIndex: null,
+  traceCache: {},
+  historySessions: [],
 
   providers: defaultProviders,
-  activeProvider: 'Groq',
-  activeModel: 'llama-3.3-70b-versatile',
-  providerStatus: { Groq: 'online', OpenAI: 'online', Anthropic: 'online' },
+  activeProvider: 'ATRE Threat Engine',
+  activeModel: 'atre-v1-graph-reasoner',
+  providerStatus: { 'ATRE Threat Engine': 'online', Groq: 'online', OpenAI: 'online', Anthropic: 'online' },
   latency: null,
   cost: null,
   tokens: null,
@@ -391,15 +412,55 @@ export class AiStore extends Store<AiState> {
     this.setState({ searchQuery });
   }
 
-  // ─── Reasoning ───
+  // ─── ATRE Reasoning Integration ───
 
-  setReasoning(reasoning: { steps: string[]; confidence: number; intermediateChain: string[]; finalConclusion: string }): void {
+  setReasoning(reasoning: {
+    steps: string[];
+    confidence: number;
+    intermediateChain: string[];
+    finalConclusion: string;
+    atreTrace?: any[];
+    atreHypotheses?: any[];
+    atreRecommendations?: any[];
+    atreAttackChain?: any;
+    atreConfidenceBreakdown?: any;
+  }): void {
     this.setState({
       reasoningSteps: reasoning.steps,
       confidence: reasoning.confidence,
       intermediateChain: reasoning.intermediateChain,
-      finalConclusion: reasoning.finalConclusion
+      finalConclusion: reasoning.finalConclusion,
+      atreTrace: reasoning.atreTrace ?? null,
+      atreHypotheses: reasoning.atreHypotheses ?? null,
+      atreRecommendations: reasoning.atreRecommendations ?? null,
+      atreAttackChain: reasoning.atreAttackChain ?? null,
+      atreConfidenceBreakdown: reasoning.atreConfidenceBreakdown ?? null,
     });
+  }
+
+  setSelectedTraceSessionId(sessionId: string | null): void {
+    this.setState({ selectedTraceSessionId: sessionId });
+  }
+
+  setActiveTraceDetail(traceDetail: any | null): void {
+    this.setState({ activeTraceDetail: traceDetail });
+  }
+
+  setSelectedStepIndex(index: number | null): void {
+    this.setState({ selectedStepIndex: index });
+  }
+
+  cacheTraceSession(sessionId: string, traceData: any): void {
+    this.setState((state) => ({
+      traceCache: {
+        ...state.traceCache,
+        [sessionId]: traceData,
+      },
+    }));
+  }
+
+  setHistorySessions(historySessions: any[]): void {
+    this.setState({ historySessions });
   }
 
   // ─── Providers ───

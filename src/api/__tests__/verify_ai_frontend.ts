@@ -937,7 +937,7 @@ describe('Section 9 — Reactive Subscriber Isolation', () => {
 
   // 100 rapid state changes with 3 subscribers (~300 assertions)
   test('100 rapid changes with 3 subscribers', () => {
-    let counters = [0, 0, 0];
+    const counters = [0, 0, 0];
     const subs = [
       s.subscribe(() => counters[0]++),
       s.subscribe(() => counters[1]++),

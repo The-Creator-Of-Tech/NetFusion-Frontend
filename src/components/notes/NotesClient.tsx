@@ -148,6 +148,27 @@ export default function NotesClient({ projectId, initialNote }: Props) {
     },
   });
 
+  // Fetch existing note on mount for persistence
+  useEffect(() => {
+    let isMounted = true;
+    if (projectId) {
+      fetch(`/api/projects/${projectId}/notes`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (isMounted && data?.note) {
+            setNote(data.note);
+            if (editor && !isDirtyRef.current && data.note.content) {
+              editor.commands.setContent(data.note.content);
+            }
+          }
+        })
+        .catch(() => {});
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [projectId, editor]);
+
   // Cleanup timer on unmount
   useEffect(() => {
     return () => {

@@ -512,7 +512,7 @@ export default function ProjectOverviewClient({
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
+      setTimeout(() => window.URL.revokeObjectURL(url), 60000);
       toast.success("PDF report exported successfully.");
     } catch (err) {
       console.error("PDF export failed:", err);

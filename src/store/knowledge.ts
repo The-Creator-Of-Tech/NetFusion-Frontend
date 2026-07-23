@@ -1,6 +1,6 @@
 import { Store } from './base';
 import * as Types from '../types/api';
-import { request } from '../api/request';
+import { request, agentRequest } from '../api/request';
 import { Endpoints } from '../api/endpoints';
 
 // ─── State Shape ──────────────────────────────────────────────────────────────
@@ -25,6 +25,11 @@ export interface KnowledgeState {
 
   // Correlation Graph
   graph: Types.KnowledgeGraph | null;
+  selectedNode: Types.KnowledgeGraphNode | null;
+  selectedNodeDetails: Record<string, any> | null;
+  selectedNodeNeighbors: any[];
+  selectedEdge: Types.KnowledgeGraphEdge | null;
+  expandingNodeId: string | null;
 
   // Global Search
   searchQuery: string;
@@ -51,6 +56,7 @@ export interface KnowledgeState {
     campaigns: boolean;
     graph: boolean;
     search: boolean;
+    nodeDetails: boolean;
   };
   error: {
     mitre: string | null;
@@ -60,6 +66,7 @@ export interface KnowledgeState {
     campaigns: string | null;
     graph: string | null;
     search: string | null;
+    nodeDetails: string | null;
   };
 }
 
@@ -72,6 +79,11 @@ const initialState: KnowledgeState = {
   threatActors: [],
   campaigns: [],
   graph: null,
+  selectedNode: null,
+  selectedNodeDetails: null,
+  selectedNodeNeighbors: [],
+  selectedEdge: null,
+  expandingNodeId: null,
   searchQuery: '',
   searchResults: [],
   filters: {},
@@ -90,6 +102,7 @@ const initialState: KnowledgeState = {
     campaigns: false,
     graph: false,
     search: false,
+    nodeDetails: false,
   },
   error: {
     mitre: null,
@@ -99,6 +112,7 @@ const initialState: KnowledgeState = {
     campaigns: null,
     graph: null,
     search: null,
+    nodeDetails: null,
   },
 };
 
@@ -309,6 +323,109 @@ export class KnowledgeStore extends Store<KnowledgeState> {
       this.setError('graph', err?.message ?? 'Failed to load knowledge graph');
     } finally {
       this.setLoading('graph', false);
+    }
+  }
+
+  // ─── Selection & UTKG Interactions ──────────────────────────────────────────
+
+  setSelectedNode(node: Types.KnowledgeGraphNode | null): void {
+    this.setState({ selectedNode: node, selectedEdge: null });
+    if (node) {
+      this.loadNodeDetails(node.id);
+    } else {
+      this.setState({ selectedNodeDetails: null, selectedNodeNeighbors: [] });
+    }
+  }
+
+  setSelectedEdge(edge: Types.KnowledgeGraphEdge | null): void {
+    this.setState({ selectedEdge: edge, selectedNode: null, selectedNodeDetails: null, selectedNodeNeighbors: [] });
+  }
+
+  clearSelection(): void {
+    this.setState({ selectedNode: null, selectedNodeDetails: null, selectedNodeNeighbors: [], selectedEdge: null });
+  }
+
+  async loadNodeDetails(nodeId: string): Promise<void> {
+    this.setLoading('nodeDetails', true);
+    this.setError('nodeDetails', null);
+    try {
+      // 1. Fetch single node details from UTKG backend
+      const nodeRes = await agentRequest.get<{ status: string; node: any }>(
+        Endpoints.knowledge.utkg.node(nodeId)
+      ).catch(() => null);
+
+      // 2. Fetch node neighbors from UTKG backend
+      const neighborsRes = await agentRequest.get<{ status: string; neighbors: any[]; count: number }>(
+        Endpoints.knowledge.utkg.neighbors(nodeId)
+      ).catch(() => null);
+
+      this.setState({
+        selectedNodeDetails: nodeRes?.node ?? null,
+        selectedNodeNeighbors: neighborsRes?.neighbors ?? [],
+      });
+    } catch (err: any) {
+      this.setError('nodeDetails', err?.message ?? 'Failed to load node details');
+    } finally {
+      this.setLoading('nodeDetails', false);
+    }
+  }
+
+  async expandNode(projectId: string, nodeId: string, depth = 2): Promise<void> {
+    this.setState({ expandingNodeId: nodeId });
+    try {
+      // Fetch expanded subgraph centered on nodeId
+      const res = await agentRequest.get<{ status: string; subgraph: { nodes: any[]; edges: any[] } }>(
+        Endpoints.knowledge.utkg.subgraph(nodeId, undefined, depth)
+      ).catch(async () => {
+        // Fallback to Next.js route with center_node_id
+        return request.get<{ nodes: any[]; edges: any[] }>(
+          `${Endpoints.knowledge.graph(projectId)}?center_node_id=${encodeURIComponent(nodeId)}&depth=${depth}`
+        ).then(r => ({ status: 'success', subgraph: { nodes: r.nodes, edges: r.edges } }));
+      });
+
+      const newNodes: Types.KnowledgeGraphNode[] = (res.subgraph?.nodes ?? []).map((n: any) => ({
+        id: n.node_id ?? n.id ?? n.canonical_id,
+        type: (n.node_type ?? n.type ?? 'asset').toLowerCase(),
+        label: String(n.label ?? n.name ?? n.canonical_id ?? n.id),
+        name: n.name ?? n.label,
+        description: n.description ?? '',
+        confidence: n.confidence ?? 1.0,
+        source_feed: n.source_feed ?? 'UTKG Backend',
+        external_id: n.external_id ?? '',
+        risk: n.risk ?? 'MEDIUM',
+        metadata: { ...(n.data ?? {}), ...(n.properties ?? {}) },
+        properties: n.properties ?? {},
+      }));
+
+      const newEdges: Types.KnowledgeGraphEdge[] = (res.subgraph?.edges ?? []).map((e: any, idx: number) => ({
+        id: e.edge_id ?? e.id ?? `e_${nodeId}_${idx}`,
+        source: String(e.source_node_id ?? e.source),
+        target: String(e.target_node_id ?? e.target),
+        label: String(e.edge_type ?? e.label ?? 'connects'),
+        edge_type: e.edge_type ?? e.label ?? 'connects',
+        weight: e.weight ?? 1.0,
+        confidence: e.confidence ?? 1.0,
+        evidence_count: e.evidence_count ?? 0,
+        source_feed: e.source_feed ?? 'UTKG Backend',
+      }));
+
+      this.setState((state) => {
+        if (!state.graph) return { graph: { nodes: newNodes, edges: newEdges } };
+        const existingNodeIds = new Set(state.graph.nodes.map((n) => n.id));
+        const existingEdgeIds = new Set(state.graph.edges.map((e) => e.id));
+
+        const mergedNodes = [...state.graph.nodes];
+        newNodes.forEach((n) => { if (!existingNodeIds.has(n.id)) mergedNodes.push(n); });
+
+        const mergedEdges = [...state.graph.edges];
+        newEdges.forEach((e) => { if (!existingEdgeIds.has(e.id)) mergedEdges.push(e); });
+
+        return { graph: { nodes: mergedNodes, edges: mergedEdges } };
+      });
+    } catch (err: any) {
+      this.setError('graph', `Failed to expand node: ${err?.message || err}`);
+    } finally {
+      this.setState({ expandingNodeId: null });
     }
   }
 

@@ -26,13 +26,13 @@ export interface PendingInvite {
 }
 
 interface Props {
-  projectId: string;
-  projectName: string;
-  projectDescription: string | null;
-  initialMembers: MemberRow[];
-  initialInvites: PendingInvite[];
-  currentUserId: string;
-  isOwner: boolean;
+  projectId?: string;
+  projectName?: string;
+  projectDescription?: string | null;
+  initialMembers?: MemberRow[];
+  initialInvites?: PendingInvite[];
+  currentUserId?: string;
+  isOwner?: boolean;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -181,16 +181,16 @@ function InviteModal({ projectId, onInvited, onClose }: InviteModalProps) {
 // ── Main Component ─────────────────────────────────────────────────────────────
 
 export default function SettingsClient({
-  projectId,
-  projectName,
-  projectDescription,
-  initialMembers,
-  initialInvites,
-  currentUserId,
-  isOwner,
+  projectId = "",
+  projectName = "Settings",
+  projectDescription = null,
+  initialMembers = [],
+  initialInvites = [],
+  currentUserId = "",
+  isOwner = false,
 }: Props) {
-  const [members,       setMembers]       = useState<MemberRow[]>(initialMembers);
-  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>(initialInvites);
+  const [members,       setMembers]       = useState<MemberRow[]>(initialMembers ?? []);
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>(initialInvites ?? []);
   const [inviteOpen,    setInviteOpen]    = useState(false);
   const [toast,         setToast]         = useState("");
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null); // memberId
@@ -205,10 +205,10 @@ export default function SettingsClient({
   function handleInvited(result: { member?: MemberRow; invite?: PendingInvite; invited?: boolean }) {
     setInviteOpen(false);
     if (result.member) {
-      setMembers((prev) => [...prev, result.member!]);
+      setMembers((prev) => [...(prev ?? []), result.member!]);
       showToast(`${result.member.user.name} added to project`);
     } else if (result.invite) {
-      setPendingInvites((prev) => [result.invite!, ...prev]);
+      setPendingInvites((prev) => [result.invite!, ...(prev ?? [])]);
       showToast(`Invitation sent to ${result.invite.email}`);
     }
   }
@@ -224,7 +224,7 @@ export default function SettingsClient({
     const data = await res.json();
     setRoleLoading(null);
     if (!res.ok) { showToast("Failed to change role"); return; }
-    setMembers((prev) => prev.map((m) => m.id === memberId ? { ...m, role: data.member.role } : m));
+    setMembers((prev) => (prev ?? []).map((m) => m.id === memberId ? { ...m, role: data.member.role } : m));
     showToast("Role updated");
   }
 
@@ -233,7 +233,7 @@ export default function SettingsClient({
     const res = await fetch(`/api/projects/${projectId}/members/${memberId}`, { method: "DELETE" });
     setConfirmRemove(null);
     if (!res.ok) { showToast("Failed to remove member"); return; }
-    setMembers((prev) => prev.filter((m) => m.id !== memberId));
+    setMembers((prev) => (prev ?? []).filter((m) => m.id !== memberId));
     showToast("Member removed");
   }
 
@@ -241,9 +241,12 @@ export default function SettingsClient({
   async function handleRevokeInvite(inviteId: string) {
     const res = await fetch(`/api/projects/${projectId}/members/invites/${inviteId}`, { method: "DELETE" });
     if (!res.ok) { showToast("Failed to revoke invite"); return; }
-    setPendingInvites((prev) => prev.filter((i) => i.id !== inviteId));
+    setPendingInvites((prev) => (prev ?? []).filter((i) => i.id !== inviteId));
     showToast("Invitation revoked");
   }
+
+  const safeMembers = members ?? [];
+  const safePendingInvites = pendingInvites ?? [];
 
   return (
     <div className="p-6 max-w-2xl">
@@ -275,7 +278,7 @@ export default function SettingsClient({
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-foreground">
             Members
-            <span className="ml-2 text-xs text-muted font-normal">{members.length}</span>
+            <span className="ml-2 text-xs text-muted font-normal">{safeMembers.length}</span>
           </h2>
           {isOwner && (
             <button
@@ -291,32 +294,32 @@ export default function SettingsClient({
         </div>
 
         <div className="bg-surface border border-border rounded-xl overflow-hidden">
-          {members.map((m, i) => {
-            const isYou      = m.user.id === currentUserId;
+          {safeMembers.map((m, i) => {
+            const isYou      = m.user?.id === currentUserId;
             const isThisOwner = m.role === "OWNER";
-            const hue        = avatarHue(m.user.name);
+            const hue        = avatarHue(m.user?.name ?? "User");
             const canChange  = isOwner && !isThisOwner && !isYou;
 
             return (
               <div
                 key={m.id}
-                className={`flex items-center gap-3 px-4 py-3 ${i < members.length - 1 ? "border-b border-border" : ""}`}
+                className={`flex items-center gap-3 px-4 py-3 ${i < safeMembers.length - 1 ? "border-b border-border" : ""}`}
               >
                 {/* Avatar */}
                 <div
                   className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
                   style={{ background: `hsl(${hue},50%,38%)` }}
                 >
-                  {getInitials(m.user.name)}
+                  {getInitials(m.user?.name ?? "User")}
                 </div>
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-foreground truncate">{m.user.name}</span>
+                    <span className="text-sm font-medium text-foreground truncate">{m.user?.name ?? "Unknown"}</span>
                     {isYou && <span className="text-xs text-muted">(you)</span>}
                   </div>
-                  <p className="text-xs text-muted truncate">{m.user.email}</p>
+                  <p className="text-xs text-muted truncate">{m.user?.email ?? ""}</p>
                 </div>
 
                 {/* Role badge / selector */}
@@ -340,7 +343,7 @@ export default function SettingsClient({
 
                 {/* Joined date */}
                 <span className="text-xs text-muted shrink-0 hidden sm:block">
-                  {formatDate(m.joinedAt)}
+                  {m.joinedAt ? formatDate(m.joinedAt) : "—"}
                 </span>
 
                 {/* Remove button */}
@@ -378,17 +381,17 @@ export default function SettingsClient({
       </section>
 
       {/* Pending invitations */}
-      {isOwner && pendingInvites.length > 0 && (
+      {isOwner && safePendingInvites.length > 0 && (
         <section className="mb-8">
           <h2 className="text-sm font-semibold text-foreground mb-3">
             Pending Invitations
-            <span className="ml-2 text-xs text-muted font-normal">{pendingInvites.length}</span>
+            <span className="ml-2 text-xs text-muted font-normal">{safePendingInvites.length}</span>
           </h2>
           <div className="bg-surface border border-border rounded-xl overflow-hidden">
-            {pendingInvites.map((inv, i) => (
+            {safePendingInvites.map((inv, i) => (
               <div
                 key={inv.id}
-                className={`flex items-center gap-3 px-4 py-3 ${i < pendingInvites.length - 1 ? "border-b border-border" : ""}`}
+                className={`flex items-center gap-3 px-4 py-3 ${i < safePendingInvites.length - 1 ? "border-b border-border" : ""}`}
               >
                 {/* Envelope icon */}
                 <div className="w-8 h-8 rounded-full bg-surface-2 border border-border flex items-center justify-center shrink-0 text-muted">
@@ -400,7 +403,7 @@ export default function SettingsClient({
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground truncate">{inv.email}</p>
                   <p className="text-xs text-muted">
-                    Expires {formatDate(inv.expiresAt)}
+                    Expires {inv.expiresAt ? formatDate(inv.expiresAt) : "—"}
                   </p>
                 </div>
 

@@ -163,14 +163,72 @@ export default function ExecutionMonitorClient({ projectId, playbookId }: Props)
     }
   };
 
-  const handleDownload = (artifact: any) => {
+  const handleDownload = async (artifact: any) => {
     const downloadUrl = `/api/projects/${projectId}/workflow/executions/${selected?.id}/artifacts/${artifact.artifactId}/download`;
-    const a = document.createElement("a");
-    a.href = downloadUrl;
-    a.download = artifact.name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    try {
+      console.log("[DOWNLOAD PIPELINE] 1. Initiating fetch to:", downloadUrl);
+      const response = await fetch(downloadUrl);
+      console.log("[DOWNLOAD PIPELINE] response.status:", response.status);
+      console.log("[DOWNLOAD PIPELINE] response.headers:", Array.from(response.headers.entries()));
+
+      if (!response.ok) {
+        console.error("[DOWNLOAD PIPELINE] Response failed with status", response.status);
+        return;
+      }
+
+      const blob = await response.blob();
+      console.log("[DOWNLOAD PIPELINE] blob.size:", blob.size);
+      console.log("[DOWNLOAD PIPELINE] blob.type:", blob.type);
+
+      if (blob.size === 0) {
+        console.error("[DOWNLOAD PIPELINE] Backend returned 0-byte blob!");
+        return;
+      }
+
+      let cleanName = artifact.name || "artifact";
+      cleanName = cleanName.replace(/[-_]?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g, "");
+      cleanName = cleanName.replace(/[-_]?[0-9a-fA-F]{32}/g, "");
+      cleanName = cleanName.replace(/analysis_capture.*\.md/i, "AI_Investigation_Report.md");
+
+      // Check header disposition fallback
+      const disposition = response.headers.get("content-disposition");
+      if (disposition && disposition.includes("filename=")) {
+        const match = disposition.match(/filename=["']?([^"';]+)["']?/);
+        if (match && match[1]) {
+          cleanName = match[1];
+        }
+      }
+
+      if (artifact.type === "markdown" || artifact.type === "report" || cleanName.toLowerCase().includes("investigation")) {
+        cleanName = "AI_Investigation_Report.md";
+      } else if (artifact.type === "pcap" || artifact.type === "pcapng" || cleanName.toLowerCase().includes("capture")) {
+        const today = new Date().toISOString().split("T")[0];
+        const ext = artifact.type === "pcapng" ? ".pcapng" : ".pcap";
+        cleanName = `LiveCapture_${today}${ext}`;
+      }
+
+      console.log("[DOWNLOAD PIPELINE] download filename:", cleanName);
+
+      const objectUrl = URL.createObjectURL(blob);
+      console.log("[DOWNLOAD PIPELINE] Created Object URL:", objectUrl);
+
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = cleanName;
+      console.log("[DOWNLOAD PIPELINE] anchor.download:", a.download);
+      console.log("[DOWNLOAD PIPELINE] anchor.href:", a.href);
+
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      setTimeout(() => {
+        console.log("[DOWNLOAD PIPELINE] Revoking Object URL:", objectUrl);
+        URL.revokeObjectURL(objectUrl);
+      }, 60000);
+    } catch (err) {
+      console.error("[DOWNLOAD PIPELINE] Error during download:", err);
+    }
   };
 
   const handleOpenInWireshark = async (artifact: any) => {

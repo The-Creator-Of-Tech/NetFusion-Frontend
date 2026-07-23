@@ -366,7 +366,7 @@ export default function ProjectSearch({ projectId }: Props) {
           ) : results.length === 0 ? (
             <div className="px-4 py-8 text-center">
               <p className="text-sm text-muted">No results for</p>
-              <p className="text-sm font-semibold text-foreground mt-0.5">"{query}"</p>
+              <p className="text-sm font-semibold text-foreground mt-0.5">&quot;{query}&quot;</p>
             </div>
           ) : (
             <div className="py-1">

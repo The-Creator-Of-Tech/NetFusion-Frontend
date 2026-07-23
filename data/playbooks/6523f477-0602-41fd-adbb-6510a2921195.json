@@ -1,0 +1,81 @@
+{
+  "id": "pb-6523f477-0602-41fd-adbb-6510a2921195",
+  "name": "Network Investigation Playbook",
+  "description": "Standard operating workflow for network threat hunting and PCAP packet forensics.",
+  "category": "Network Investigation",
+  "steps": [
+    {
+      "id": "step-1",
+      "number": 1,
+      "title": "Live Capture",
+      "description": "Monitor real-time network interface traffic and capture active flows.",
+      "status": "completed",
+      "targetTab": "network",
+      "trafficMode": "live",
+      "unlocked": true,
+      "executedAt": "2026-07-23T05:29:14.483Z",
+      "details": "12,480 packets captured on eth0 interface."
+    },
+    {
+      "id": "step-2",
+      "number": 2,
+      "title": "Nmap Scan",
+      "description": "Perform host discovery, open port enumeration, and service fingerprinting.",
+      "status": "completed",
+      "targetTab": "network",
+      "trafficMode": "nmap",
+      "unlocked": true,
+      "executedAt": "2026-07-23T05:59:14.483Z",
+      "details": "Subnet scan complete. 8 active hosts and 14 open ports detected."
+    },
+    {
+      "id": "step-3",
+      "number": 3,
+      "title": "PCAP Analysis",
+      "description": "Inspect PCAP payloads, decode HTTP/TLS headers, and isolate suspicious streams.",
+      "status": "running",
+      "targetTab": "evidence",
+      "evidenceSubTab": "pcap",
+      "unlocked": true,
+      "details": "Parsing Wireshark stream dis-assembler data for C2 traffic..."
+    },
+    {
+      "id": "step-4",
+      "number": 4,
+      "title": "Threat Intelligence",
+      "description": "Query ThreatIntel feeds (EPSS, CVE, AlienVault) against extracted IOCs.",
+      "status": "running",
+      "targetTab": "intel",
+      "unlocked": false,
+      "details": "Awaiting completion of PCAP payload analysis."
+    },
+    {
+      "id": "step-5",
+      "number": 5,
+      "title": "MITRE Mapping",
+      "description": "Correlate identified TTPs with ATT&CK matrix tactics and techniques.",
+      "status": "running",
+      "targetTab": "mitre",
+      "unlocked": false
+    },
+    {
+      "id": "step-6",
+      "number": 6,
+      "title": "AI Analysis",
+      "description": "Run ATRE Threat Reasoner decision trees and probability confidence scoring.",
+      "status": "running",
+      "targetTab": "atre",
+      "unlocked": false
+    },
+    {
+      "id": "step-7",
+      "number": 7,
+      "title": "Generate Report",
+      "description": "Compile multi-stage forensic evidence into an executive investigation report.",
+      "status": "running",
+      "targetTab": "reports",
+      "unlocked": false
+    }
+  ],
+  "updatedAt": "2026-07-23T06:32:05.697Z"
+}

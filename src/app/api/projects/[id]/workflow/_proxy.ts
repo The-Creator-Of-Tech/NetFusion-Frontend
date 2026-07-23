@@ -103,6 +103,8 @@ export async function proxyWorkflow(
     if (contentType) responseHeaders['Content-Type'] = contentType;
     const contentDisposition = upstream.headers.get('content-disposition');
     if (contentDisposition) responseHeaders['Content-Disposition'] = contentDisposition;
+    const contentLength = upstream.headers.get('content-length');
+    if (contentLength) responseHeaders['Content-Length'] = contentLength;
 
     return new NextResponse(body, {
       status: upstream.status,

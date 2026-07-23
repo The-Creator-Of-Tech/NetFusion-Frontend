@@ -26,6 +26,62 @@ interface ConfigFormProps {
   currentStep?: PlaybookStep;
 }
 
+function TagInput({
+  tagArr,
+  placeholder,
+  onChange,
+}: {
+  tagArr: string[];
+  placeholder?: string;
+  onChange: (tags: string[]) => void;
+}) {
+  const [draftTag, setDraftTag] = useState("");
+
+  const commitTag = () => {
+    const t = draftTag.trim();
+    if (t && !tagArr.includes(t)) {
+      onChange([...tagArr, t]);
+    }
+    setDraftTag("");
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap gap-1 bg-surface border border-border rounded-lg px-2 py-1.5 focus-within:ring-2 focus-within:ring-accent">
+        {tagArr.map((tag) => (
+          <span
+            key={tag}
+            className="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface border border-border text-foreground"
+          >
+            {tag}
+            <button
+              type="button"
+              onClick={() => onChange(tagArr.filter((t) => t !== tag))}
+              className="text-muted hover:text-red-400 transition-colors leading-none"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          value={draftTag}
+          onChange={(e) => setDraftTag(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === ",") {
+              e.preventDefault();
+              commitTag();
+            }
+          }}
+          onBlur={commitTag}
+          placeholder={tagArr.length === 0 ? (placeholder || "Enter tags...") : ""}
+          className="flex-1 min-w-[60px] bg-transparent text-xs text-foreground placeholder:text-muted outline-none"
+        />
+      </div>
+      <p className="text-[9px] text-muted">Press Enter or comma to add tag</p>
+    </div>
+  );
+}
+
 export default function ConfigForm({ schema, value, onChange, allSteps, currentStep }: ConfigFormProps) {
   const [interfaces, setInterfaces] = useState<{ value: string; label: string }[]>([]);
   const [loadingInterfaces, setLoadingInterfaces] = useState(false);
@@ -175,7 +231,10 @@ export default function ConfigForm({ schema, value, onChange, allSteps, currentS
         })
         .then((data) => {
           const ifaces = data.interfaces || [];
-          setInterfaces(ifaces.map((i: any) => ({ value: i.value, label: i.label })));
+          setInterfaces(ifaces.map((i: any) => ({
+            value: i.value || i.id || i.name || "",
+            label: i.label || i.name || i.id || i.value || "Unknown Interface"
+          })));
         })
         .catch((err) => {
           console.error("ConfigForm: Failed to fetch interfaces, using fallbacks:", err);
@@ -358,50 +417,12 @@ export default function ConfigForm({ schema, value, onChange, allSteps, currentS
 
       case "tags": {
         const tagArr = Array.isArray(currentValue) ? currentValue : [];
-        const [draftTag, setDraftTag] = useState("");
-
-        const commitTag = () => {
-          const t = draftTag.trim();
-          if (t && !tagArr.includes(t)) {
-            handleFieldChange(key, [...tagArr, t]);
-          }
-          setDraftTag("");
-        };
-
         return (
-          <div className="space-y-1.5">
-            <div className="flex flex-wrap gap-1 bg-surface border border-border rounded-lg px-2 py-1.5 focus-within:ring-2 focus-within:ring-accent">
-              {tagArr.map((tag) => (
-                <span
-                  key={tag}
-                  className="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface border border-border text-foreground"
-                >
-                  {tag}
-                  <button
-                    type="button"
-                    onClick={() => handleFieldChange(key, tagArr.filter((t) => t !== tag))}
-                    className="text-muted hover:text-red-400 transition-colors leading-none"
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-              <input
-                value={draftTag}
-                onChange={(e) => setDraftTag(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === ",") {
-                    e.preventDefault();
-                    commitTag();
-                  }
-                }}
-                onBlur={commitTag}
-                placeholder={tagArr.length === 0 ? (field.placeholder || "Enter tags...") : ""}
-                className="flex-1 min-w-[60px] bg-transparent text-xs text-foreground placeholder:text-muted outline-none"
-              />
-            </div>
-            <p className="text-[9px] text-muted">Press Enter or comma to add tag</p>
-          </div>
+          <TagInput
+            tagArr={tagArr}
+            placeholder={field.placeholder || "Enter tags..."}
+            onChange={(newTags) => handleFieldChange(key, newTags)}
+          />
         );
       }
 

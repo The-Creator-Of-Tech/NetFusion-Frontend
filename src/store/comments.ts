@@ -11,7 +11,7 @@ import { request } from '../api/request';
 import { Endpoints } from '../api/endpoints';
 import { responseCache, CacheKeys } from '../api/cache';
 import { deduplicator } from '../api/deduplicator';
-import { optimisticUpdate, optimisticAdd, optimisticPatch, optimisticRemove } from '../api/optimistic';
+import { optimisticUpdate, optimisticPatch, optimisticRemove } from '../api/optimistic';
 import type {
   Comment,
   CommentEntityType,
