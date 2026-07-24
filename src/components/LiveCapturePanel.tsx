@@ -9,8 +9,10 @@ import { toast } from "react-hot-toast";
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface CaptureInterface {
-  id: string;
-  name: string;
+  id?: string;
+  name?: string;
+  label?: string;
+  value?: string;
 }
 
 interface AnalysisResult {
@@ -37,10 +39,14 @@ type CaptureStatus = "idle" | "running" | "stopped" | "analyzing";
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function LiveCapturePanel() {
+interface LiveCapturePanelProps {
+  projectId?: string;
+}
+
+export default function LiveCapturePanel({ projectId: propProjectId }: LiveCapturePanelProps = {}) {
   const router = useRouter();
   const params = useParams();
-  const projectId = params.id as string;
+  const projectId = propProjectId || (params?.id as string);
 
   const [interfaces, setInterfaces] = useState<CaptureInterface[]>([]);
   const [selectedIface, setSelectedIface] = useState<string>("");
@@ -94,7 +100,7 @@ export default function LiveCapturePanel() {
   const [captureStartedAt, setCaptureStartedAt] = useState<string | null>(null);
   const [captureStoppedAt, setCaptureStoppedAt] = useState<string | null>(null);
 
-  const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL ?? "";
+  const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL || "http://localhost:8000";
   const { setNetfusionContext } = useNetfusionContext();
 
   // ── Runtime snapshot ref — updated every render, readable inside timeouts ──
@@ -289,11 +295,23 @@ export default function LiveCapturePanel() {
       setLoadingIfaces(true);
       setError("");
       try {
-        const res = await fetch(`${agentUrl}/capture/interfaces`);
+        const url = agentUrl || "http://localhost:8000";
+        const res = await fetch(`${url}/capture/interfaces`);
         if (!res.ok) throw new Error(`Failed to load interfaces (${res.status})`);
         const data = await res.json();
-        setInterfaces(data.interfaces ?? []);
-        if (data.interfaces?.length > 0) setSelectedIface(data.interfaces[0].value);
+        const rawIfaces: any[] = data.interfaces ?? (Array.isArray(data) ? data : []);
+        const normalized: CaptureInterface[] = rawIfaces.map((i: any) => ({
+          ...i,
+          id: i.id || i.value || i.name || "",
+          name: i.name || i.label || i.value || "",
+          label: i.label || i.name || i.id || i.value || "",
+          value: i.value || i.id || i.name || "",
+        }));
+        setInterfaces(normalized);
+        if (normalized.length > 0) {
+          const firstVal = normalized[0].value || normalized[0].id || normalized[0].name || "";
+          setSelectedIface(firstVal);
+        }
       } catch (err) {
         setError(`Could not load interfaces: ${err instanceof Error ? err.message : String(err)}`);
       } finally {
@@ -301,8 +319,7 @@ export default function LiveCapturePanel() {
       }
     }
 
-    if (agentUrl) loadInterfaces();
-    else setError("NEXT_PUBLIC_AGENT_URL is not set — capture agent is unavailable.");
+    loadInterfaces();
   }, [agentUrl]);
 
   // Load project details on mount
@@ -425,7 +442,7 @@ export default function LiveCapturePanel() {
     a.href = url;
     a.download = captureFile || "capture.pcapng";
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
 
   async function loadDeviceProfile(ip: string) {
@@ -493,7 +510,7 @@ export default function LiveCapturePanel() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
+      setTimeout(() => window.URL.revokeObjectURL(url), 60000);
     } catch (err) {
       console.error("PDF export failed:", err);
       alert(`Failed to export PDF: ${err instanceof Error ? err.message : String(err)}`);
@@ -505,19 +522,38 @@ export default function LiveCapturePanel() {
   async function generateInvestigationPlan() {
     setPlanLoading(true);
     try {
-      const res = await fetch(`${agentUrl}/ai/investigation-plan`, {
+      // Try ATRE /reasoning/recommendations endpoint first
+      let res = await fetch(`${agentUrl}/reasoning/recommendations`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          summary: liveSummary,
-          alerts: liveAlerts,
-          iocs: liveIocs,
-          correlations: liveCorrelationFindings,
-          riskRanking: riskRanking,
-          mitre: mitreMapping,
-          timeline: timeline,
+          user_question: liveSummary || "Generate evidence-backed investigation recommendations",
+          parameters: {
+            alerts: liveAlerts,
+            iocs: liveIocs,
+            correlations: liveCorrelationFindings,
+            riskRanking: riskRanking,
+          },
         }),
       });
+
+      if (!res.ok) {
+        // Fallback to legacy endpoint if ATRE fails
+        res = await fetch(`${agentUrl}/ai/investigation-plan`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            summary: liveSummary,
+            alerts: liveAlerts,
+            iocs: liveIocs,
+            correlations: liveCorrelationFindings,
+            riskRanking: riskRanking,
+            mitre: mitreMapping,
+            timeline: timeline,
+          }),
+        });
+      }
+
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
@@ -527,6 +563,19 @@ export default function LiveCapturePanel() {
         setInvestigationPlan({
           error: data.error,
           raw_response: data.raw_response
+        });
+      } else if (data.recommendations) {
+        // Formatted from ATRE recommendations
+        const recs = data.recommendations || [];
+        setInvestigationPlan({
+          overall_assessment: "ATRE Threat Reasoning Engine - Security Recommendations",
+          priority_targets: (riskRanking || []).slice(0, 3).map((r: any) => ({
+            host: r.ip || "Unknown",
+            reason: (r.reasons || []).join(", ") || "Elevated risk score",
+            priority: r.score > 70 ? "HIGH" : "MEDIUM",
+          })),
+          investigation_steps: recs.map((r: any) => `[${r.priority || 'ACTION'}] ${r.title}: ${r.description}`),
+          recommended_actions: recs.map((r: any) => r.reasoning ? `${r.title} — ${r.reasoning}` : r.title),
         });
       } else {
         const normalized = {
@@ -563,25 +612,53 @@ export default function LiveCapturePanel() {
     setStoryLoading(true);
     setStoryError("");
     try {
-      const res = await fetch(`${agentUrl}/ai/attack-story`, {
+      // Try ATRE /reasoning/attack-chain endpoint first
+      let res = await fetch(`${agentUrl}/reasoning/attack-chain`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          summary: liveSummary,
-          alerts: liveAlerts,
-          iocs: liveIocs,
-          correlations: liveCorrelationFindings,
-          riskRanking: riskRanking,
-          mitre: mitreMapping,
-          timeline: timeline,
+          user_question: liveSummary || "Reconstruct ATT&CK tactical attack chain",
+          parameters: {
+            alerts: liveAlerts,
+            iocs: liveIocs,
+            timeline: timeline,
+          },
         }),
       });
+
+      if (!res.ok) {
+        // Fallback to legacy endpoint if ATRE fails
+        res = await fetch(`${agentUrl}/ai/attack-story`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            summary: liveSummary,
+            alerts: liveAlerts,
+            iocs: liveIocs,
+            correlations: liveCorrelationFindings,
+            riskRanking: riskRanking,
+            mitre: mitreMapping,
+            timeline: timeline,
+          }),
+        });
+      }
+
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
       const data = await res.json();
       if (data.error) {
         setStoryError("Failed to generate attack story.");
+      } else if (data.attack_chain) {
+        const chain = data.attack_chain;
+        setAttackStory({
+          title: "ATRE ATT&CK Tactical Attack Chain",
+          executive_summary: chain.summary || "Tactical attack chain reconstructed by ATRE.",
+          severity: chain.overall_confidence > 0.7 ? "HIGH" : "MEDIUM",
+          story: chain.stages || [],
+          total_stages: chain.total_stages || 0,
+          overall_confidence: chain.overall_confidence || 0,
+        });
       } else {
         setAttackStory(data);
       }
@@ -592,6 +669,7 @@ export default function LiveCapturePanel() {
       setStoryLoading(false);
     }
   }
+
 
   const getPhaseDescription = (phaseName: string, index: number) => {
     if (!attackStory || !Array.isArray(attackStory.story)) return "";
@@ -1535,9 +1613,15 @@ export default function LiveCapturePanel() {
                   {interfaces.length === 0 ? (
                     <option value="">No interfaces found</option>
                   ) : (
-                    interfaces.map((iface) => (
-                      <option key={iface.value} value={iface.value}>{iface.label}</option>
-                    ))
+                    interfaces.map((iface, idx) => {
+                      const val = iface.value || iface.id || iface.name || `iface-${idx}`;
+                      const lbl = iface.label || iface.name || iface.id || val;
+                      return (
+                        <option key={val} value={val}>
+                          {lbl}
+                        </option>
+                      );
+                    })
                   )}
                 </select>
               )}

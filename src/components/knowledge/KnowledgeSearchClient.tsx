@@ -153,7 +153,7 @@ export default function KnowledgeSearchClient({ projectId }: Props) {
           <div className="w-12 h-12 rounded-xl bg-surface-2 border border-border flex items-center justify-center mb-3 text-muted">
             <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg>
           </div>
-          <p className="text-foreground font-medium mb-1">No results for "{query}"</p>
+          <p className="text-foreground font-medium mb-1">No results for &quot;{query}&quot;</p>
           <p className="text-muted text-sm">Try different keywords or run a capture session first</p>
         </div>
       ) : (
@@ -161,7 +161,13 @@ export default function KnowledgeSearchClient({ projectId }: Props) {
           <p className="text-xs text-muted mb-3">{filtered.length} result{filtered.length !== 1 ? "s" : ""}{query ? ` for "${query}"` : ""}</p>
           <div className="space-y-2">
             {filtered.map((result) => {
-              const cfg = TYPE_CONFIG[result.type];
+              const cfg = TYPE_CONFIG[result.type as keyof typeof TYPE_CONFIG] ?? {
+                label: result.type.toUpperCase(),
+                bg: "bg-blue-500/10",
+                text: "text-blue-400",
+                border: "border-blue-500/20",
+                icon: null,
+              };
               const sevDot = SEV_DOT[result.severity ?? ""] ?? "";
               return (
                 <div key={`${result.type}-${result.id}`} className="flex items-center gap-3 p-3 bg-surface border border-border rounded-xl hover:border-accent/40 hover:bg-surface-2 transition-all cursor-pointer group">

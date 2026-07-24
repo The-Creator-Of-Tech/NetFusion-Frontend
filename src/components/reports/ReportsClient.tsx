@@ -12,8 +12,8 @@ import type { ReportRow, GenerateReportRequest, ReportSectionKey, ExportFormat }
 
 interface Props {
   projectId: string;
-  projectName: string;
-  initialReports: ReportRow[];
+  projectName?: string;
+  initialReports?: ReportRow[];
 }
 
 // ── Config ─────────────────────────────────────────────────────────────────────
@@ -255,12 +255,13 @@ function ReportDetailModal({
 
 interface GeneratePanelProps {
   projectId: string;
-  projectName: string;
+  projectName?: string;
   onClose: () => void;
 }
 
-function GeneratePanel({ projectId, projectName, onClose }: GeneratePanelProps) {
-  const defaultTitle = `${projectName} — Security Report ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+function GeneratePanel({ projectId, projectName = "", onClose }: GeneratePanelProps) {
+  const namePrefix = projectName ? `${projectName} — ` : "";
+  const defaultTitle = `${namePrefix}Security Report ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
   const [title,    setTitle]   = useState(defaultTitle);
   const [sections, setSections] = useState<ReportSectionKey[]>(SECTION_OPTIONS.map((s) => s.key));
   const [dateFrom, setDateFrom] = useState("");
@@ -463,7 +464,7 @@ function FilterBar({ projectId }: { projectId: string }) {
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 
-export default function ReportsClient({ projectId, projectName, initialReports }: Props) {
+export default function ReportsClient({ projectId, projectName = "", initialReports = [] }: Props) {
   const {
     pagedReports, totalFiltered,
     page, limit, totalPages, hasNextPage, hasPrevPage,
@@ -478,7 +479,7 @@ export default function ReportsClient({ projectId, projectName, initialReports }
 
   // Seed store with SSR data on first render
   useEffect(() => {
-    if (initialReports.length > 0 && reportsStore.getState().reports.length === 0) {
+    if (initialReports && initialReports.length > 0 && reportsStore.getState().reports.length === 0) {
       reportsStore.setReports(initialReports);
       reportsStore.setTotal(initialReports.length);
     }

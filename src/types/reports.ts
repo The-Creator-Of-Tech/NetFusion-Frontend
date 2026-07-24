@@ -4,9 +4,6 @@
  * Extends the base Report type from api.ts with richer shapes
  * used across the store, hooks, services, and UI layers.
  */
-
-import type { Report, User, Finding } from './api';
-
 // ─── Risk level ───────────────────────────────────────────────────────────────
 
 export type RiskLevel = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';

@@ -29,7 +29,11 @@ interface Props {
   projectId: string;
   open: boolean;
   onClose: () => void;
+  width?: number;
+  onMouseDownResize?: (e: React.MouseEvent) => void;
+  isResizing?: boolean;
   netfusionContext?: NetfusionContext;
+  inline?: boolean;
 }
 
 const SUGGESTIONS = [
@@ -163,7 +167,11 @@ export default function CopilotSidebar({
   projectId,
   open,
   onClose,
+  width = 420,
+  onMouseDownResize,
+  isResizing = false,
   netfusionContext,
+  inline = false,
 }: Props) {
   // Hooks
   const {
@@ -186,7 +194,7 @@ export default function CopilotSidebar({
   } = useConversation();
 
   const { typingSpeed, setTypingSpeed } = useStreaming();
-  const { reasoningSteps, confidence, intermediateChain, finalConclusion } = useReasoning();
+  const { reasoningSteps, confidence, intermediateChain, finalConclusion, atreTrace, atreHypotheses, atreRecommendations, atreConfidenceBreakdown } = useReasoning();
   const { memoryEntries, searchQuery, addMemory, removeMemory, searchMemory } = useMemory();
   const { contextSize, attachedAssets, attachedFindings, attachAsset, detachAsset, attachFinding, detachFinding, setContext, setAttachedInvestigation } = useContext();
   const { providers, activeProvider, activeModel, providerStatus, latency, cost, tokens, switchProvider, switchModel } = useProviders();
@@ -250,7 +258,7 @@ export default function CopilotSidebar({
   return (
     <>
       {/* Backdrop */}
-      {open && (
+      {!inline && open && (
         <div
           className="fixed inset-0 z-30 bg-black/40 backdrop-blur-xs sm:hidden"
           onClick={onClose}
@@ -259,16 +267,26 @@ export default function CopilotSidebar({
 
       {/* Main Panel */}
       <div
-        className={`
-          fixed top-0 right-0 bottom-0 z-40
-          w-[420px] max-w-[100vw]
-          flex flex-col
-          bg-surface border-l border-border shadow-2xl
-          transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]
-          ${open ? "translate-x-0" : "translate-x-full"}
-        `}
+        style={inline ? { width: '100%', height: '100%' } : { width: open ? `${width}px` : undefined }}
+        className={
+          inline
+            ? "h-full flex flex-col bg-surface w-full overflow-hidden"
+            : `fixed top-0 right-0 bottom-0 z-40 max-w-[100vw] flex flex-col bg-surface border-l border-border shadow-2xl ${
+                isResizing ? "" : "transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
+              } ${open ? "translate-x-0" : "translate-x-full"}`
+        }
         aria-label="AI Copilot sidebar"
       >
+        {/* Drag Resize Handle */}
+        {onMouseDownResize && (
+          <div
+            onMouseDown={onMouseDownResize}
+            title="Drag left/right to resize Copilot panel"
+            className={`absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-accent/40 z-50 transition-colors ${
+              isResizing ? "bg-accent" : "bg-transparent"
+            }`}
+          />
+        )}
         {/* Header Tabs */}
         <div className="flex flex-col border-b border-border bg-surface-2 shrink-0">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
@@ -452,7 +470,7 @@ export default function CopilotSidebar({
                     Ask AI Detective
                   </p>
                   <p className="text-xs text-text-secondary leading-relaxed max-w-[280px] select-none">
-                    I have context of this workspace's timeline logs, asset lists, and vulnerability findings. Choose a suggestion below:
+                    I have context of this workspace&apos;s timeline logs, asset lists, and vulnerability findings. Choose a suggestion below:
                   </p>
 
                   <div className="mt-6 w-full space-y-2 max-w-[320px] text-left select-none">
@@ -748,44 +766,36 @@ export default function CopilotSidebar({
         {/* ─── TAB CONTENT: REASONING & PROVIDERS ─── */}
         {activeTab === "reasoning" && (
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
-            {/* Reasoning Steps & Confidence Gauge */}
-            <div className="space-y-3 select-none">
-              <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider">Detective Reasoning Logs</h3>
-
-              <div className="bg-surface-2 border border-border rounded-xl p-3.5 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-foreground">Analyst Confidence Score</span>
-                  <span className="text-xs font-mono font-bold text-success">{confidence}%</span>
-                </div>
-                <div className="h-2 w-full bg-surface rounded-full overflow-hidden border border-border">
-                  <div
-                    className="h-full bg-success transition-all duration-500"
-                    style={{ width: `${confidence}%` }}
-                  />
-                </div>
-
-                <div className="space-y-2 mt-4">
-                  <div className="text-[11px] font-semibold text-foreground">Intermediate Chain:</div>
-                  <div className="pl-2 border-l border-accent/20 space-y-1.5 text-[10px] text-text-secondary font-mono">
-                    {intermediateChain.length > 0 ? (
-                      intermediateChain.map((step, idx) => (
-                        <div key={idx} className="flex gap-1.5">
-                          <span className="text-accent">•</span>
-                          <span>{step}</span>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="italic text-muted">No chain logs generated yet.</div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-border mt-3 text-[10px]">
-                  <div className="font-semibold text-foreground">Conclusion:</div>
-                  <div className="text-text-secondary mt-0.5">{finalConclusion || "Waiting for prompt input."}</div>
-                </div>
+            {/* ATRE / AI Reasoning Trace Steps */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider">AI Reasoning Trace</h3>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-accent/10 border border-accent/20 text-accent font-semibold">
+                  Confidence: {confidence}%
+                </span>
               </div>
+              {reasoningSteps.length === 0 ? (
+                <p className="text-xs text-muted italic bg-surface-2 p-3 rounded-xl border border-border">
+                  No active reasoning trace for this conversation yet. Ask Copilot a question to initiate reasoning.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {reasoningSteps.map((step, idx) => (
+                    <div key={idx} className="bg-surface-2 border border-border p-2.5 rounded-xl text-xs space-y-1">
+                      <span className="font-mono text-[10px] text-accent font-bold">Step {idx + 1}</span>
+                      <p className="text-foreground leading-relaxed">{step}</p>
+                    </div>
+                  ))}
+                  {finalConclusion && (
+                    <div className="bg-accent/10 border border-accent/30 p-3 rounded-xl text-xs space-y-1">
+                      <span className="font-bold text-accent">Final Conclusion</span>
+                      <p className="text-foreground">{finalConclusion}</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+
 
             {/* Providers Settings and Status maps */}
             <div className="space-y-3 select-none">

@@ -145,6 +145,26 @@ export const Endpoints = {
     graph: (projectId: string) => `/api/projects/${projectId}/knowledge/graph`,
     search: (projectId: string) => `/api/projects/${projectId}/knowledge/search`,
     searchKnowledge: (projectId: string) => `/api/projects/${projectId}/knowledge/search`,
+    utkg: {
+      visualization: (fmt = 'react_flow', centerNodeId?: string, depth = 2, maxNodes = 200) =>
+        `/intelligence/graph/visualization?fmt=${fmt}&depth=${depth}&max_nodes=${maxNodes}${centerNodeId ? `&center_node_id=${encodeURIComponent(centerNodeId)}` : ''}`,
+      node: (nodeId: string) => `/intelligence/graph/node/${encodeURIComponent(nodeId)}`,
+      neighbors: (nodeId: string, direction = 'both', limit = 100) =>
+        `/intelligence/graph/node/${encodeURIComponent(nodeId)}/neighbors?direction=${direction}&limit=${limit}`,
+      search: (q: string, nodeType?: string, minConfidence?: number) =>
+        `/intelligence/graph/search?q=${encodeURIComponent(q)}${nodeType ? `&node_type=${encodeURIComponent(nodeType)}` : ''}${minConfidence !== undefined ? `&min_confidence=${minConfidence}` : ''}`,
+      subgraph: (centerNodeId?: string, nodeIds?: string[], depth = 2) =>
+        `/intelligence/graph/subgraph?depth=${depth}${centerNodeId ? `&center_node_id=${encodeURIComponent(centerNodeId)}` : ''}${nodeIds ? `&node_ids=${encodeURIComponent(nodeIds.join(','))}` : ''}`,
+      traverse: (nodeId: string, algorithm = 'bfs', maxDepth = 3) =>
+        `/intelligence/graph/traverse?node_id=${encodeURIComponent(nodeId)}&algorithm=${algorithm}&max_depth=${maxDepth}`,
+      path: (source: string, target: string, algorithm = 'shortest') =>
+        `/intelligence/graph/path?source=${encodeURIComponent(source)}&target=${encodeURIComponent(target)}&algorithm=${algorithm}`,
+      statistics: (recompute = false) => `/intelligence/graph/statistics?recompute=${recompute}`,
+      attackChain: (nodeId: string) => `/intelligence/graph/query/attack-chain/${encodeURIComponent(nodeId)}`,
+      aiExpand: (nodeId: string, depth = 2) => `/intelligence/graph/ai/expand-context/${encodeURIComponent(nodeId)}?depth=${depth}`,
+      aiRelated: (nodeId: string, targetType: string) => `/intelligence/graph/ai/related-entities/${encodeURIComponent(nodeId)}?target_type=${encodeURIComponent(targetType)}`,
+      fusion: () => `/intelligence/graph/fusion`,
+    },
   },
   workflow: {
     // Playbooks
@@ -240,5 +260,24 @@ export const Endpoints = {
     aiAttackStory: '/ai/attack-story',
     captureSession: (projectId: string) => `/capture/session/${projectId}`,
     downloadCapture: '/capture/download',
+    atre: {
+      query: '/reasoning/query',
+      hypothesis: '/reasoning/hypothesis',
+      explain: '/reasoning/explain',
+      risk: '/reasoning/risk',
+      attackChain: '/reasoning/attack-chain',
+      recommendations: '/reasoning/recommendations',
+      timeline: '/reasoning/timeline',
+      report: '/reasoning/report',
+      history: (limit = 50) => `/reasoning/history?limit=${limit}`,
+      statistics: '/reasoning/statistics',
+      trace: (sessionId: string) => `/reasoning/trace/${encodeURIComponent(sessionId)}`,
+      traceTimeline: (sessionId: string) => `/reasoning/trace/${encodeURIComponent(sessionId)}/timeline`,
+      traceGraph: (sessionId: string) => `/reasoning/trace/${encodeURIComponent(sessionId)}/graph`,
+      traceConfidence: (sessionId: string) => `/reasoning/trace/${encodeURIComponent(sessionId)}/confidence`,
+      traceDecisions: (sessionId: string) => `/reasoning/trace/${encodeURIComponent(sessionId)}/decisions`,
+      traceExport: (sessionId: string, format = 'json') => `/reasoning/trace/${encodeURIComponent(sessionId)}/export?format=${format}`,
+    },
   }
 };
+

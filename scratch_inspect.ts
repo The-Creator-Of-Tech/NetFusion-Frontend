@@ -1,8 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { prisma } from './src/lib/prisma';
 
-const FASTAPI_URL = process.env.NEXT_PUBLIC_AGENT_URL || 'http://localhost:8000';
+const FASTAPI_URL = 'http://localhost:8000';
 
 interface GraphNode {
   id: string;
@@ -19,7 +17,6 @@ interface GraphEdge {
   weight?: number;
 }
 
-// ── Helper: fetch one FastAPI v2 knowledge endpoint ──────────────────────────
 async function fetchFastAPI(path: string): Promise<any[]> {
   try {
     const res = await fetch(`${FASTAPI_URL}${path}`, {
@@ -36,15 +33,10 @@ async function fetchFastAPI(path: string): Promise<any[]> {
   }
 }
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
+async function main() {
+  const pid = '6523f477-0602-41fd-adbb-6510a2921195';
   const project = await prisma.project.findUnique({
-    where: { id: params.id },
+    where: { id: pid },
     select: {
       ownerId: true,
       members: { select: { userId: true } },
@@ -62,14 +54,8 @@ export async function GET(
     },
   });
 
-  if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+  if (!project) return;
 
-  const isOwner = project.ownerId === session.user.id;
-  const isMember = project.members.some((m) => m.userId === session.user.id);
-  if (!isOwner && !isMember) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-
-  // ── Fan out to all FastAPI v2 knowledge endpoints in parallel ───────────────
-  const pid = params.id;
   const [fapiMitre, fapiIoc, fapiCve, fapiThreats, fapiCampaigns] = await Promise.all([
     fetchFastAPI(`/api/v2/knowledge/mitre/?project_id=${pid}`),
     fetchFastAPI(`/api/v2/knowledge/ioc/?project_id=${pid}`),
@@ -93,6 +79,7 @@ export async function GET(
 
   const addEdge = (source: string, target: string, label: string, weight = 1) => {
     if (nodeMap.has(source) && nodeMap.has(target)) {
+      // Prevent duplicates
       const exists = edges.some(e => e.source === source && e.target === target && e.label === label);
       if (!exists) {
         edges.push({ id: `e_${edgeCounter++}`, source, target, label, weight });
@@ -100,7 +87,7 @@ export async function GET(
     }
   };
 
-  // ── 1. Assets (from Prisma) ──────────────────────────────────────────────────
+  // 1. Assets (2)
   project.assets.forEach((a) => {
     addNode({
       id: `asset_${a.id}`,
@@ -110,7 +97,7 @@ export async function GET(
     });
   });
 
-  // ── 2. Findings (from Prisma) ────────────────────────────────────────────────
+  // 2. Findings (1)
   project.findings.forEach((f) => {
     const nodeId = `finding_${f.id}`;
     addNode({
@@ -124,20 +111,10 @@ export async function GET(
     }
   });
 
-  // ── 3. MITRE Techniques ──────────────────────────────────────────────────────
-  let mitreArr: any[] = fapiMitre;
-  if (mitreArr.length === 0) {
-    const rawMitre = project.captureSession?.mitre;
-    mitreArr = Array.isArray(rawMitre)
-      ? rawMitre
-      : rawMitre && (rawMitre as any).techniques
-      ? (rawMitre as any).techniques
-      : [];
-  }
-
+  // 3. MITRE (2)
   const seenMitre = new Set<string>();
   const mitreNodeIds: string[] = [];
-  mitreArr.forEach((t) => {
+  fapiMitre.forEach((t) => {
     const tid = t.mitreId ?? t.id ?? t.techniqueId ?? '';
     const name = t.name ?? t.technique ?? '';
     if (!tid || seenMitre.has(tid)) return;
@@ -152,15 +129,9 @@ export async function GET(
     });
   });
 
-  // ── 4. IOCs ──────────────────────────────────────────────────────────────────
-  let iocArr: any[] = fapiIoc;
-  if (iocArr.length === 0) {
-    const rawIocs = project.captureSession?.iocs;
-    iocArr = Array.isArray(rawIocs) ? rawIocs : [];
-  }
-
+  // 4. IOCs (2)
   const iocNodeIds: string[] = [];
-  iocArr.forEach((ioc, i) => {
+  fapiIoc.forEach((ioc, i) => {
     const value = ioc.value ?? ioc.indicator ?? ioc.ioc ?? `ioc_${i}`;
     const nodeId = `ioc_${i}`;
     iocNodeIds.push(nodeId);
@@ -176,31 +147,10 @@ export async function GET(
     });
   });
 
-  // ── 5. CVEs ──────────────────────────────────────────────────────────────────
-  let cveArr: any[] = fapiCve;
-  if (cveArr.length === 0) {
-    const alerts = project.captureSession?.alerts;
-    const ti = project.captureSession?.trafficIntelligence as any;
-    const seen = new Set<string>();
-    const tmp: any[] = [];
-    if (Array.isArray(alerts)) {
-      alerts.forEach((a: any) => {
-        const id = a.cve ?? a.cveId ?? a.cve_id ?? '';
-        if (id && !seen.has(id)) { seen.add(id); tmp.push({ id, severity: a.severity }); }
-      });
-    }
-    if (ti?.cves && Array.isArray(ti.cves)) {
-      ti.cves.forEach((c: any) => {
-        const id = c.id ?? c.cve_id ?? '';
-        if (id && !seen.has(id)) { seen.add(id); tmp.push(c); }
-      });
-    }
-    cveArr = tmp;
-  }
-
+  // 5. CVEs (2)
   const seenCve = new Set<string>();
   const cveNodeIds: string[] = [];
-  cveArr.forEach((c) => {
+  fapiCve.forEach((c) => {
     const id = c.cveId ?? c.id ?? c.cve_id ?? '';
     if (!id || seenCve.has(id)) return;
     seenCve.add(id);
@@ -214,15 +164,9 @@ export async function GET(
     });
   });
 
-  // ── 6. Threat Actors ─────────────────────────────────────────────────────────
-  let threatArr: any[] = fapiThreats;
-  if (threatArr.length === 0) {
-    const ti = project.captureSession?.trafficIntelligence as any;
-    threatArr = ti?.threatActors && Array.isArray(ti.threatActors) ? ti.threatActors : [];
-  }
-
+  // 6. Threat Actors (1)
   const threatNodeIds: string[] = [];
-  threatArr.forEach((actor: any, i: number) => {
+  fapiThreats.forEach((actor: any, i: number) => {
     const actorId = `threat_${i}`;
     threatNodeIds.push(actorId);
     const name = actor.threatName ?? actor.name ?? `Actor ${i}`;
@@ -234,15 +178,9 @@ export async function GET(
     });
   });
 
-  // ── 7. Campaigns ─────────────────────────────────────────────────────────────
-  let campaignArr: any[] = fapiCampaigns;
-  if (campaignArr.length === 0) {
-    const ti = project.captureSession?.trafficIntelligence as any;
-    campaignArr = ti?.campaigns && Array.isArray(ti.campaigns) ? ti.campaigns : [];
-  }
-
+  // 7. Campaigns (1)
   const campaignNodeIds: string[] = [];
-  campaignArr.forEach((c: any, i: number) => {
+  fapiCampaigns.forEach((c: any, i: number) => {
     const campaignId = `campaign_${i}`;
     campaignNodeIds.push(campaignId);
     const name = c.name ?? `Campaign ${i}`;
@@ -254,19 +192,14 @@ export async function GET(
     });
   });
 
-  // ── Establish Intelligence Relationships (6 Edges) ──────────────────────────
-  // Edge 1: Asset -> Finding (already added if assetId matched)
-  // Fallback: If not added via assetId, link finding to asset
-  if (project.findings.length > 0 && project.assets.length > 0 && edges.length === 0) {
-    addEdge(`asset_${project.assets[0].id}`, `finding_${project.findings[0].id}`, 'has_finding');
-  }
-
-  // Edge 2: Finding -> CVE
+  // ── Establish Relationships (Edges) ──────────────────────────────────────────
+  // 1. Finding -> Asset (already added if f.assetId exists)
+  // 2. Finding -> CVE (e.g. finding -> Log4j/cve_CVE-2021-44228)
   if (project.findings.length > 0 && cveNodeIds.length > 0) {
     addEdge(`finding_${project.findings[0].id}`, cveNodeIds[0], 'exposes_cve');
   }
 
-  // Edge 3 & 4: CVEs -> MITRE Techniques
+  // 3. CVE -> MITRE (e.g. Log4j -> T1059, MSHTML -> T1204)
   if (cveNodeIds.length > 0 && mitreNodeIds.length > 0) {
     addEdge(cveNodeIds[0], mitreNodeIds[0], 'maps_to');
   }
@@ -274,15 +207,19 @@ export async function GET(
     addEdge(cveNodeIds[1], mitreNodeIds[1], 'maps_to');
   }
 
-  // Edge 5: Campaign -> Threat Actor
+  // 4. Campaign -> Threat Actor (Operation Bearish Hunt -> APT28)
   if (campaignNodeIds.length > 0 && threatNodeIds.length > 0) {
     addEdge(campaignNodeIds[0], threatNodeIds[0], 'conducted_by');
   }
 
-  // Edge 6: Threat Actor -> IOC
+  // 5. Threat Actor -> IOC (APT28 -> 45.155.205.233 / ioc_0)
   if (threatNodeIds.length > 0 && iocNodeIds.length > 0) {
     addEdge(threatNodeIds[0], iocNodeIds[0], 'ATTRIBUTED_TO');
   }
 
-  return NextResponse.json({ nodes, edges });
+  console.log(`TOTAL NODES: ${nodes.length}`);
+  console.log(`TOTAL EDGES: ${edges.length}`);
+  edges.forEach(e => console.log(`  [${e.label}] ${e.source} -> ${e.target}`));
 }
+
+main().finally(() => prisma.$disconnect());

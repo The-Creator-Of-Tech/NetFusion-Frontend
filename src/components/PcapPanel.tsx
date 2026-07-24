@@ -571,7 +571,7 @@ export default function PcapPanel({ projectId }: PcapPanelProps) {
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
 
   async function generateCorrelation(analysisData: any) {

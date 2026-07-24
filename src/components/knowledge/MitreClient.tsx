@@ -170,7 +170,7 @@ export default function MitreClient({ projectId }: Props) {
 
             {/* Grid */}
             {filtered.length === 0 ? (
-              <p className="text-muted text-sm text-center py-10">No results matching "{search}"</p>
+              <p className="text-muted text-sm text-center py-10">No results matching &quot;{search}&quot;</p>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {filtered.map((t) => {

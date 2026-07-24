@@ -309,9 +309,16 @@ export interface Campaign {
 
 export interface KnowledgeGraphNode {
   id: string;
-  type: 'asset' | 'finding' | 'ioc' | 'mitre' | 'threat_actor' | 'campaign' | 'cve';
+  type: 'asset' | 'finding' | 'ioc' | 'mitre' | 'threat_actor' | 'campaign' | 'cve' | 'alert' | 'report' | 'vulnerability' | string;
   label: string;
+  name?: string;
+  description?: string;
+  source_feed?: string;
+  external_id?: string;
+  confidence?: number;
+  risk?: string;
   metadata?: Record<string, any>;
+  properties?: Record<string, any>;
 }
 
 export interface KnowledgeGraphEdge {
@@ -319,28 +326,42 @@ export interface KnowledgeGraphEdge {
   source: string;
   target: string;
   label?: string;
+  edge_type?: string;
   weight?: number;
+  confidence?: number;
+  evidence_count?: number;
+  source_feed?: string;
+  timestamp?: string;
+  properties?: Record<string, any>;
 }
 
 export interface KnowledgeGraph {
   nodes: KnowledgeGraphNode[];
   edges: KnowledgeGraphEdge[];
+  statistics?: Record<string, any>;
 }
 
 export interface KnowledgeSearchResult {
   id: string;
-  type: 'mitre' | 'cve' | 'ioc' | 'threat' | 'campaign';
+  type: 'mitre' | 'cve' | 'ioc' | 'threat' | 'campaign' | 'asset' | 'finding' | 'alert' | string;
   title: string;
   subtitle?: string;
   severity?: Severity;
+  confidence?: number;
+  source_feed?: string;
   tags?: string[];
+  metadata?: Record<string, any>;
 }
 
 export interface KnowledgeFilters {
+  node_type?: string;
+  edge_type?: string;
   severity?: Severity[];
   vendor?: string;
   platform?: string;
   confidence?: number;
+  min_confidence?: number;
+  source?: string;
   threatLevel?: string;
   campaign?: string;
   dateFrom?: string;
@@ -672,9 +693,12 @@ export interface TriggerAutomationRequest {
 // ─── Agent API Payload/Response Types ───────────────────────────────────────
 
 export interface AgentInterface {
-  name: string;
+  name?: string;
   description?: string;
   addresses?: string[];
+  id?: string;
+  label?: string;
+  value?: string;
 }
 
 export interface AgentScanRequest {

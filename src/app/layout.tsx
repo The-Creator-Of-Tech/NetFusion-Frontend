@@ -1,24 +1,25 @@
 import type { Metadata } from "next";
-import localFont from "next/font/local";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "react-hot-toast";
 import { validateEnv } from "@/lib/env";
 
-const geistSans = localFont({
-  src: "./fonts/GeistVF.woff",
-  variable: "--font-geist-sans",
-  weight: "100 900",
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
 });
-const geistMono = localFont({
-  src: "./fonts/GeistMonoVF.woff",
-  variable: "--font-geist-mono",
-  weight: "100 900",
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-jetbrains-mono",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "NetFusion — Unified Network Analysis Workspace",
+  title: "NetFusion — Enterprise Cybersecurity Platform",
   description:
-    "NetFusion brings network discovery, traffic analysis, investigation management, reporting, and team collaboration into a single platform.",
+    "NetFusion brings network discovery, traffic analysis, threat reasoning, evidence management, and SOC collaboration into a unified enterprise platform.",
 };
 
 export default function RootLayout({
@@ -29,9 +30,9 @@ export default function RootLayout({
   validateEnv();
 
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${inter.variable} ${jetbrainsMono.variable} font-sans antialiased bg-background text-foreground selection:bg-accent/20 selection:text-foreground`}
       >
         {children}
         <Toaster
@@ -41,18 +42,19 @@ export default function RootLayout({
           toastOptions={{
             duration: 3500,
             style: {
-              background: "#161b22",
-              color: "#e6edf3",
-              border: "1px solid #30363d",
-              borderRadius: "10px",
+              background: "#111827",
+              color: "#F8FAFC",
+              border: "1px solid #273449",
+              borderRadius: "12px",
               fontSize: "13px",
               padding: "10px 14px",
+              boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.5)",
             },
             success: {
-              iconTheme: { primary: "#3fb950", secondary: "#0d1117" },
+              iconTheme: { primary: "#16A34A", secondary: "#0B1220" },
             },
             error: {
-              iconTheme: { primary: "#f85149", secondary: "#0d1117" },
+              iconTheme: { primary: "#DC2626", secondary: "#0B1220" },
             },
           }}
         />

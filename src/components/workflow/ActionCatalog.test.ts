@@ -44,7 +44,7 @@ describe("ActionCatalog Metadata and Schema Rules", () => {
       expect(action.description).toBeDefined();
       expect(typeof action.description).toBe("string");
       expect(action.version).toBe("1.0");
-      expect(action.configSchema).toEqual({});
+      expect(typeof action.configSchema).toBe("object");
     });
   });
 

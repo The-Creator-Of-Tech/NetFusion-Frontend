@@ -1,0 +1,39 @@
+{
+  "projectId": "6523f477-0602-41fd-adbb-6510a2921195",
+  "executiveSummary": "",
+  "severity": "HIGH",
+  "status": "INVESTIGATING",
+  "hypotheses": [
+    {
+      "id": "hyp-1",
+      "statement": "Suspicious outbound connections observed to unknown C2 IP infrastructure.",
+      "category": "Command and Control",
+      "status": "unverified",
+      "notes": "Awaiting PCAP deep packet analysis.",
+      "createdAt": "2026-07-23T06:15:00.106Z"
+    }
+  ],
+  "findingsSummary": "",
+  "evidenceReferences": [],
+  "tasks": [
+    {
+      "id": "task-1",
+      "title": "Perform PCAP traffic analysis for suspicious ports",
+      "completed": false,
+      "priority": "high",
+      "category": "Network Inspection"
+    },
+    {
+      "id": "task-2",
+      "title": "Correlate host telemetry with threat intelligence databases",
+      "completed": false,
+      "priority": "medium",
+      "category": "Threat Intel"
+    }
+  ],
+  "commandsExecuted": [],
+  "screenshots": [],
+  "conclusions": "",
+  "nextActions": [],
+  "updatedAt": "2026-07-23T06:15:00.106Z"
+}
